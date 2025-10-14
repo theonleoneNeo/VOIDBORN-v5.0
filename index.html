@@ -1,0 +1,3653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Voidborn</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  /* === Retro 90s UI skin === */
+  :root{
+    --panel-bg:#c0c0c0;
+    --panel-accent:#000080;
+    --bevel-light:#fff;
+    --bevel-dark:#808080;
+    --font: "MS Sans Serif", Geneva, sans-serif;
+  }
+  html,body{height:100%;margin:0;font-family:var(--font);background:#00383b;color:#000;overflow:hidden}
+  #app{display:flex;height:100vh;width:100vw;align-items:stretch}
+  #simulation{flex:1;background:#000;position:relative;overflow:hidden; touch-action: none;}
+  canvas#mainCanvas{display:block;width:100%;height:100%;image-rendering:pixelated;cursor:grab}
+  canvas#mainCanvas:active{cursor:grabbing}
+  /* minimap */
+  #minimap{
+    position:absolute;right:10px;bottom:10px;
+    width:220px;height:160px;border:2px groove var(--bevel-dark);
+    background:rgba(0,0,0,0.35);backdrop-filter:contrast(0.9);
+    z-index:40;box-shadow:2px 2px 0 rgba(0,0,0,0.6);border-radius:3px;
+  }
+  #crtOverlay{
+    pointer-events:none;
+    position:absolute;left:0;top:0;right:0;bottom:0;
+    mix-blend-mode:overlay;opacity:0.45;z-index:50;
+  }
+
+  /* side UI */
+  #ui{
+    width:380px;padding:8px;background:var(--panel-bg);
+    border-left:3px outset var(--bevel-light);box-shadow:inset -2px -2px 4px var(--bevel-dark);
+    display:flex;flex-direction:column;gap:6px;overflow:auto;height:100vh;
+  }
+  header#title{
+    background:var(--panel-accent);color:#fff;padding:6px;border:2px groove var(--bevel-dark);
+    text-align:center;font-size:18px;margin:0 0 4px 0;
+  }
+
+  /* collapsible retro lists */
+  details{background:#e5e5e5;border:2px groove var(--bevel-dark);padding:6px;margin-bottom:6px}
+  details[open]{box-shadow:inset 2px 2px 0 rgba(0,0,0,0.1)}
+  summary{font-weight:bold;cursor:pointer;outline:none}
+  .statbox{background:#fff;border:1px inset var(--bevel-dark);padding:6px;margin:6px 0;font-size:12px;position:relative}
+  .stat{font-weight:bold;color:#d00}
+  .tooltip{
+    position:absolute;right:8px;top:8px;font-size:11px;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.7);color:#fff;display:none;
+  }
+  .statbox:hover .tooltip{display:block}
+  .ally {color: green; font-weight: bold;}
+  .enemy {color: red; font-weight: bold;}
+  .neutral {color: gray;}
+
+  /* event log */
+  #event-log{background:#fff;padding:6px;border:1px inset var(--bevel-dark);height:160px;overflow:auto;font-family:"Courier New",monospace;font-size:11px}
+  #major-events{background:#ffefc3;padding:6px;border:2px ridge #ff9900;height:110px;overflow:auto;font-family:"Courier New",monospace;font-size:12px}
+
+  /* buttons */
+  .btn{display:inline-block;padding:6px 8px;border:2px outset var(--bevel-light);background:#e0e0e0;font-weight:bold;cursor:pointer;margin:4px 4px 0 0}
+  .btn:active{border-style:inset}
+
+  /* tech tier banner */
+  #tier-banner{background:#222;color:#fff;padding:6px;text-align:center;font-weight:bold;border-radius:4px}
+
+  /* small legend */
+  .legend{display:flex;gap:6px;flex-wrap:wrap}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:12px}
+  .dot{width:12px;height:12px;border-radius:2px;border:1px solid #000;display:inline-block}
+
+  /* small text */
+  .muted{color:#333;font-size:12px}
+
+  /* NPC modal */
+  #npc-modal{
+    position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);
+    display:none;align-items:center;justify-content:center;z-index:100;
+  }
+  #npc-modal .panel{
+    background:var(--panel-bg);padding:20px;border:3px outset var(--bevel-light);max-width:300px;max-height:80vh;overflow:auto;
+  }
+  #npc-modal .close{float:right;cursor:pointer;font-size:20px;}
+
+  /* responsiveness */
+  @media(max-width:900px){
+    #ui{width:320px}
+    #minimap{width:180px;height:120px}
+  }
+  @media(max-width:768px){
+    #app{flex-direction:column;}
+    #simulation{flex:none;height:60vh;width:100%;position:relative;}
+    #ui{width:100%;height:auto;padding:4px;border-left:none;border-top:3px outset var(--bevel-light);box-shadow:inset 0 -2px 4px var(--bevel-dark);}
+    #minimap{width:120px;height:90px;right:5px;bottom:5px;}
+    header#title{font-size:16px;padding:4px;}
+    .btn{padding:4px 6px;font-size:12px;margin:2px;}
+    details{padding:4px;margin-bottom:4px;}
+    #event-log,#major-events{height:100px;font-size:10px;}
+    .statbox{padding:4px;font-size:11px;margin:4px 0;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="simulation">
+    <canvas id="mainCanvas"></canvas>
+    <canvas id="minimap"></canvas>
+    <canvas id="crtOverlay"></canvas>
+  </div>
+
+  <div id="ui">
+    <header id="title">🕹️ Voidborn</header>
+
+    <div id="tier-banner">Tech Tier: <span id="tier-name">Pioneer</span> — <span id="tier-desc" class="muted">Small tools & curiosity</span></div>
+
+    <details>
+      <summary>Game Controls</summary>
+      <div style="padding:6px">
+        <button id="save-game" class="btn">Save Game</button>
+        <button id="load-game" class="btn">Load Game</button>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Overall</summary>
+      <div class="statbox">Generation: <span id="gen" class="stat">0</span><div class="tooltip">Simulation ticks (higher = older)</div></div>
+      <div class="statbox">Population: <span id="pop" class="stat">0</span><div class="tooltip">Total living NPCs</div></div>
+      <div class="statbox">Growth: <span id="growth" class="stat">0</span><div class="tooltip">Change this generation</div></div>
+      <div class="statbox">Economy Index: <span id="economy" class="stat">1.0</span><div class="tooltip">Trade inflation factor</div></div>
+    </details>
+
+    <details>
+      <summary>Buildings Overview</summary>
+      <div id="buildings-list" style="max-height:180px;overflow:auto"></div>
+    </details>
+
+    <details>
+      <summary>Colonies</summary>
+      <div id="colonies-list" style="max-height:180px;overflow:auto"></div>
+      <div style="margin-top:6px">
+        <button id="toggle-faction-colors" class="btn">Toggle Faction Colors</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Diplomacy</summary>
+      <div id="diplomacy-list" style="max-height:180px;overflow:auto"></div>
+    </details>
+
+    <details>
+      <summary>Research</summary>
+      <div id="research-list" style="max-height:180px;overflow:auto"></div>
+    </details>
+
+    <details>
+      <summary>Trade Networks</summary>
+      <div id="trade-list" style="max-height:180px;overflow:auto"></div>
+    </details>
+
+    <details open>
+      <summary>Major Events</summary>
+      <div id="major-events"></div>
+    </details>
+
+    <details>
+      <summary>Event Log (grouped)</summary>
+      <div id="event-log"></div>
+      <div style="margin-top:6px">
+        <button id="clear-log" class="btn">Clear</button>
+        <button id="pause-sim" class="btn">Pause</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Legend</summary>
+      <div class="legend" id="legendBox"></div>
+    </details>
+
+    <button id="livestream-btn" class="btn">LIVESTREAM</button>
+
+    <button id="contract-btn" class="btn">Contract Address: F32iSjUL7fT2ZjCRYpjwuLjLE3SCuNVWzxu8xtgPpump</button>
+
+    <div style="margin-top:auto;font-size:12px" class="muted">Tips: drag canvas to pan, mousewheel to zoom. Click an NPC (nearby) for details (when zoomed).</div>
+  </div>
+</div>
+
+<!-- NPC Modal -->
+<div id="npc-modal">
+  <div class="panel">
+    <span class="close" onclick="document.getElementById('npc-modal').style.display='none'">&times;</span>
+    <h3 id="npc-name"></h3>
+    <div id="npc-details"></div>
+    <button id="follow-npc" class="btn">Follow</button>
+  </div>
+</div>
+
+<script>
+/* =========================
+   Voidborn Upgraded — single-file
+   ========================= */
+
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const mini = document.getElementById('minimap');
+const miniCtx = mini.getContext('2d');
+
+const crt = document.getElementById('crtOverlay');
+const crtCtx = crt.getContext('2d');
+
+let w=0,h=0;
+function resizeAll(){
+  canvas.width = Math.max(300, window.innerWidth - 380);
+  canvas.height = window.innerHeight;
+  mini.width = Math.min(220, Math.floor(window.innerWidth*0.18));
+  mini.height = Math.min(160, Math.floor(window.innerHeight*0.12));
+  crt.width = canvas.width; crt.height = canvas.height;
+  w = canvas.width; h = canvas.height;
+}
+window.addEventListener('resize', resizeAll);
+resizeAll();
+
+/* ---------- simulation grid ---------- */
+let gridWidth = 6250, gridHeight = 4687.5, cellSize = 2; // +25% universe expansion
+
+/* camera and zoom */
+let cameraX = gridWidth/2, cameraY = gridHeight/2;
+let zoom = 1;
+const minZoom = 0.6, maxZoom = 20;
+let cameraShake = 0, shakeTimer = 0;
+
+/* panning */
+let dragging=false,lastX=0,lastY=0;
+let pinching = false;
+let initialDistance = 0, initialZoom = 0;
+let initialPinchCenterWorldX = 0, initialPinchCenterWorldY = 0;
+let startTouchX = 0, startTouchY = 0;
+
+canvas.addEventListener('mousedown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;});
+window.addEventListener('mousemove',e=>{
+  if(dragging){ const dx=e.clientX-lastX, dy=e.clientY-lastY; cameraX -= dx/zoom; cameraY -= dy/zoom; lastX=e.clientX; lastY=e.clientY; clampCam(); }
+});
+window.addEventListener('mouseup',()=>dragging=false);
+
+// Touch events for mobile
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    dragging = true;
+    startTouchX = e.touches[0].clientX;
+    startTouchY = e.touches[0].clientY;
+    lastX = startTouchX;
+    lastY = startTouchY;
+  } else if (e.touches.length === 2) {
+    pinching = true;
+    dragging = false;
+    const t1 = e.touches[0], t2 = e.touches[1];
+    initialDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    initialZoom = zoom;
+    const rect = canvas.getBoundingClientRect();
+    const centerX = (t1.clientX + t2.clientX) / 2 - rect.left;
+    const centerY = (t1.clientY + t2.clientY) / 2 - rect.top;
+    initialPinchCenterWorldX = cameraX + (centerX - canvas.width / 2) / zoom;
+    initialPinchCenterWorldY = cameraY + (centerY - canvas.height / 2) / zoom;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (dragging && e.touches.length === 1) {
+    const dx = e.touches[0].clientX - lastX;
+    const dy = e.touches[0].clientY - lastY;
+    cameraX -= dx / zoom;
+    cameraY -= dy / zoom;
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+    clampCam();
+  } else if (pinching && e.touches.length === 2) {
+    const t1 = e.touches[0], t2 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    const scale = dist / initialDistance;
+    const newZoom = Math.max(minZoom, Math.min(maxZoom, initialZoom * scale));
+    const rect = canvas.getBoundingClientRect();
+    const centerX = (t1.clientX + t2.clientX) / 2 - rect.left;
+    const centerY = (t1.clientY + t2.clientY) / 2 - rect.top;
+    const worldX = cameraX + (centerX - canvas.width / 2) / newZoom;
+    const worldY = cameraY + (centerY - canvas.height / 2) / newZoom;
+    const factor = initialZoom / newZoom;
+    cameraX = worldX + (initialPinchCenterWorldX - worldX) * factor;
+    cameraY = worldY + (initialPinchCenterWorldY - worldY) * factor;
+    zoom = newZoom;
+    clampCam();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  dragging = false;
+  pinching = e.touches.length < 2;
+  if (e.changedTouches.length === 1 && !pinching) {
+    const touch = e.changedTouches[0];
+    const dist = Math.hypot(touch.clientX - startTouchX, touch.clientY - startTouchY);
+    if (dist < 10) { // Tap detected
+      const rect = canvas.getBoundingClientRect();
+      const mx = touch.clientX - rect.left, my = touch.clientY - rect.top;
+      const worldX = cameraX + (mx - canvas.width/2)/zoom;
+      const worldY = cameraY + (my - canvas.height/2)/zoom;
+      const nearby = getNearbyFromBuckets(npcBuckets, worldX, worldY, 10/zoom);
+      const closest = nearby.reduce((a, t) => {
+        const dist = Math.hypot(t.x - worldX, t.y - worldY);
+        return (!a || dist < a.dist) ? {t, dist} : a;
+      }, null);
+      if (closest && closest.dist < 10/zoom) {
+        showNPCDetails(closest.t);
+      }
+    }
+  }
+}, { passive: false });
+
+/* zoom to mouse */
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const worldX = cameraX - (canvas.width/2 - mx)/zoom;
+  const worldY = cameraY - (canvas.height/2 - my)/zoom;
+  const delta = e.deltaY>0 ? -0.15 : 0.15;
+  const oldZoom = zoom;
+  zoom = Math.max(minZoom, Math.min(maxZoom, zoom + delta));
+  const factor = oldZoom/zoom;
+  cameraX = worldX + (cameraX - worldX)*factor;
+  cameraY = worldY + (cameraY - worldY)*factor;
+  clampCam();
+});
+
+/* click to inspect NPC */
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const worldX = cameraX + (mx - canvas.width/2)/zoom;
+  const worldY = cameraY + (my - canvas.height/2)/zoom;
+  const nearby = getNearbyFromBuckets(npcBuckets, worldX, worldY, 10/zoom);
+  const closest = nearby.reduce((a, t) => {
+    const dist = Math.hypot(t.x - worldX, t.y - worldY);
+    return (!a || dist < a.dist) ? {t, dist} : a;
+  }, null);
+  if (closest && closest.dist < 10/zoom) {
+    showNPCDetails(closest.t);
+  }
+});
+
+function clampCam(){
+  cameraX = Math.max(0, Math.min(gridWidth, cameraX));
+  cameraY = Math.max(0, Math.min(gridHeight, cameraY));
+}
+
+/* minimap click to pan */
+mini.addEventListener('click', e => {
+  const rect = mini.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const sx = mini.width / gridWidth;
+  const sy = mini.height / gridHeight;
+  cameraX = mx / sx;
+  cameraY = my / sy;
+  zoom = 2;
+  clampCam();
+});
+
+/* ---------- performance & spatial grid ---------- */
+const bucketSize = 160;
+function bucketKey(x,y){return `${Math.floor(x/bucketSize)}-${Math.floor(y/bucketSize)}`;}
+const npcBuckets = new Map();
+const resourceBuckets = new Map();
+const buildingBuckets = new Map();
+
+function addToBucket(buckets, ent){
+  const key = bucketKey(ent.x, ent.y);
+  if(!buckets.has(key)) buckets.set(key, []);
+  buckets.get(key).push(ent);
+}
+
+function removeFromBucket(buckets, ent, oldKey) {
+  if (buckets.has(oldKey)) {
+    const arr = buckets.get(oldKey);
+    const idx = arr.indexOf(ent);
+    if (idx !== -1) arr.splice(idx, 1);
+    if (arr.length === 0) buckets.delete(oldKey);
+  }
+}
+
+/* rebuild buckets for safety (rarely needed with incremental updates) */
+function rebuildBuckets(){
+  npcBuckets.clear(); resourceBuckets.clear(); buildingBuckets.clear();
+  npcs.forEach(t=>addToBucket(npcBuckets,t));
+  resources.forEach(r=>addToBucket(resourceBuckets,r));
+  buildings.forEach(b=>addToBucket(buildingBuckets,b));
+}
+
+/* get nearby entities by world pos + range (in world coords) */
+function getNearbyFromBuckets(buckets, x, y, range){
+  const keys=[];
+  const cx=Math.floor(x/bucketSize), cy=Math.floor(y/bucketSize);
+  const off = Math.ceil(range/bucketSize);
+  for(let i=-off;i<=off;i++) for(let j=-off;j<=off;j++) keys.push(`${cx+i}-${cy+j}`);
+  const ents=[];
+  keys.forEach(k=>{ if(buckets.has(k)) ents.push(...buckets.get(k)); });
+  return ents;
+}
+
+/* ---------- world data ---------- */
+/* === Colony control flags (added) === */
+const ALLOW_NEW_COLONIES = false; // Only the first 6 starting colonies exist
+let seeding = false; // true only while creating the initial 6 colonies
+
+let npcs = [], resources = [], buildings = [], events = [], majorEvents = [];
+let generation = 0;
+let idCounter = 0;
+let particles = [];
+let showFactionColors = false;
+let prevPop = 0;
+let popGrowth = 0;
+let alienEvent = null;
+let terraformCount = 0; // For Ecosystem Balance
+let economyIndex = 1.0; // Global Currency Fluctuations
+
+/* biomes enhancements */
+const biomesMap = new Map(); // key: bucketKey, value: biome override
+
+/* factions */
+let factions = [];
+const forbiddenHex = new Set([
+  '00ff00', '888888', 'ffcc00', 'ff4444', '00ccff', 'a0a0a0', '4477ff', 'ff88ff', 'ffff00', 'ff00ff',
+  'ffff66', 'ff88ff', '66ffff', 'ff66aa', '66ff66', 'ff88cc', 'ffef66', 'ffd700', '48d1cc', 'b9f2ff'
+]);
+function newFaction(name, colorHex){
+  // Guard: prevent creating new factions after initial seeding when ALLOW_NEW_COLONIES=false
+  if (!seeding && !ALLOW_NEW_COLONIES) {
+    // Return the first faction as a harmless fallback; caller should not rely on new faction creation.
+    pushEvent('colony', 'New colonies are disabled — keeping original six.');
+    return factions[0] || { id: 'F0', name: 'Disabled', color: '000000', members: 0, relations: new Map(), research: getTechTree(), explored: new Set(), tradeRoutes: [], sanctions: new Set() };
+  }
+
+  const ideologies = ['Expansionist', 'Isolationist', 'Militaristic', 'Pacifist']; // Faction Ideologies
+  const governments = { // Faction Governments
+    'Militaristic': 'Autocracy',
+    'Pacifist': 'Democracy',
+    'Expansionist': 'Oligarchy',
+    'Isolationist': 'Theocracy'
+  };
+  const f = { 
+    id: 'F'+(factions.length+1), 
+    name, 
+    color: colorHex, 
+    members:0, 
+    leader: null, 
+    tech:0, 
+    ideology: ideologies[Math.floor(Math.random() * ideologies.length)], // New: ideology
+    government: governments[ideologies[Math.floor(Math.random() * ideologies.length)]], // Tied to ideology
+    economyIndex: 1.0, // Per-faction economy
+    relations: new Map(),
+    research: getTechTree(), // Tech Tree Branches
+    explored: new Set(),
+    tradeRoutes: [], // New: trade routes
+    sanctions: new Set() // For Economic Sanctions
+  };
+  factions.forEach(existing => {
+    f.relations.set(existing.id, {ally: false, enemy: Math.random() < 0.2, trust: 50});
+    existing.relations.set(f.id, {ally: false, enemy: Math.random() < 0.2, trust: 50});
+  });
+  factions.push(f); return f;
+}
+
+// Tech Tree Branches
+function getTechTree() {
+  return {
+    military: [
+      {name: "Laser Weapons", cost: 30, progress: 0, unlocked: false, unlock: () => {/* militaristic bonus */}},
+      {name: "Shields", cost: 80, progress: 0, unlocked: false, unlock: () => {}}
+    ],
+    cultural: [
+      {name: "Cultural Exchange", cost: 40, progress: 0, unlocked: false, unlock: () => {/* pacifist bonus */}},
+      {name: "Art Synthesis", cost: 100, progress: 0, unlocked: false, unlock: () => {}}
+    ],
+    industrial: [
+      {name: "Advanced Factory", cost: 50, progress: 0, unlocked: false, unlock: () => {}},
+      {name: "Automation", cost: 120, progress: 0, unlocked: false, unlock: () => {}}
+    ]
+  };
+}
+
+function mergeFactions(f1, f2) {
+  // Mergers disabled when only the original six colonies must persist
+  if (!ALLOW_NEW_COLONIES && !seeding) {
+    pushEvent('diplo', 'Faction mergers are disabled to preserve the original six colonies.');
+    return; // Do nothing
+  }
+
+  const newName = `${f1.name}-${f2.name} Union`;
+  // Blend colors (simple average)
+  const c1 = parseInt(f1.color, 16), c2 = parseInt(f2.color, 16);
+  const blended = Math.floor((c1 + c2) / 2).toString(16).padStart(6, '0');
+  const newF = newFaction(newName, blended);
+  // Merge members
+  npcs.forEach(t => { if (t.faction === f1.id || t.faction === f2.id) t.faction = newF.id; });
+  // Merge buildings
+  buildings.forEach(b => { if (b.faction === f1.id || b.faction === f2.id) b.faction = newF.id; });
+  // Merge research (take max progress per branch)
+  ['military', 'cultural', 'industrial'].forEach(branch => {
+    newF.research[branch] = f1.research[branch].map((r1, i) => {
+      const r2 = f2.research[branch][i] || {progress: 0};
+      return {...r1, progress: Math.max(r1.progress, r2.progress)};
+    });
+  });
+  // Merge trade routes
+  newF.tradeRoutes = [...f1.tradeRoutes, ...f2.tradeRoutes];
+  // Remove old factions
+  factions = factions.filter(f => f.id !== f1.id && f.id !== f2.id);
+  // Update relations for newF
+  factions.forEach(existing => {
+    const rel1 = f1.relations.get(existing.id) || {trust: 50};
+    const rel2 = f2.relations.get(existing.id) || {trust: 50};
+    const avgTrust = (rel1.trust + rel2.trust) / 2;
+    newF.relations.set(existing.id, {ally: false, enemy: false, trust: avgTrust});
+    existing.relations.set(newF.id, {ally: false, enemy: false, trust: avgTrust});
+  });
+  pushEvent('diplo', `${newName} formed by merger!`);
+  majorEvents.unshift(`Gen ${generation}: 🤝 ${newName} United!`);
+}
+
+function betrayalEvent(f1, f2) {
+  const defectors = Math.floor(npcs.filter(t => t.faction === f1.id).length * (Math.random() * 0.3 + 0.2)); // 20-50%
+  for (let i = 0; i < defectors; i++) {
+    const defector = npcs.find(t => t.faction === f1.id && !t.dead);
+    if (defector) {
+      defector.faction = f2.id;
+      pushEvent('betrayal', `${defector.name} defected to ${f2.name}!`);
+    }
+  }
+  // Lower trust further
+  const rel = f1.relations.get(f2.id);
+  if (rel) rel.trust = Math.max(0, rel.trust - 20);
+  majorEvents.unshift(`Gen ${generation}: 🗡️ Betrayal in ${f1.name}!`);
+}
+
+/* biome generation */
+function getBiome(x, y) {
+  const key = bucketKey(x, y);
+  if (biomesMap.has(key)) return biomesMap.get(key);
+  const n = Math.sin(x * 0.01) * Math.cos(y * 0.01) + 1;
+  const val = (n + 1) / 2;
+  if (val < 0.3) return "nebula"; // +exotic
+  if (val < 0.6) return "belt"; // +mats -energy
+  return "void";
+}
+
+function terraform(x, y, newBiome) {
+  const key = bucketKey(x, y);
+  biomesMap.set(key, newBiome);
+  terraformCount++;
+  // Check for backlash: count nearby terraforms
+  let nearbyChanges = 0;
+  const cx = Math.floor(x / bucketSize), cy = Math.floor(y / bucketSize);
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      const nkey = `${cx + i}-${cy + j}`;
+      if (biomesMap.has(nkey)) nearbyChanges++;
+    }
+  }
+  if (nearbyChanges > 3) {
+    // Backlash: spawn disaster
+    const nearbyNPCs = getNearbyFromBuckets(npcBuckets, x, y, 100);
+    nearbyNPCs.forEach(n => {
+      if (Math.random() < 0.1) { // Reduced from 0.2
+        n.energy -= 30; // Reduced from 50
+        if (n.energy <= 0) n.dead = true;
+      }
+    });
+    pushEvent('backlash', `Terraform backlash near (${Math.floor(x)},${Math.floor(y)})!`);
+    majorEvents.unshift(`Gen ${generation}: 🌪️ Ecological Backlash!`);
+  }
+  // Spawn new resource based on biome
+  spawnResource(newBiome === 'nebula' ? 'exotic' : newBiome === 'belt' ? 'mats' : 'energy', x, y);
+}
+
+const biomeCenters = []; // Precompute centers
+for(let i=0; i<3; i++) {
+  biomeCenters.push({
+    type: ["nebula","belt","void"][i],
+    x: Math.random() * gridWidth,
+    y: Math.random() * gridHeight
+  });
+}
+
+/* resource types */ 
+const resourceTypes = ["energy","energy","mats","rare","culture","tech","exotic","artifact","gold","gem","diamond","void_essence","relic"];
+
+/* spawn resource optimized */
+function spawnResource(type=null,x=null,y=null){
+  const t = type || resourceTypes[Math.floor(Math.random()*resourceTypes.length)];
+  const r = {
+    id: 'R'+(Math.random()*1e9|0),
+    x: x!==null ? x : (Math.random()*gridWidth),
+    y: y!==null ? y : (Math.random()*gridHeight),
+    type: t,
+    amount: (["tech","exotic","artifact","gold","gem","diamond","void_essence","relic"].includes(t) ? (Math.floor(Math.random()*5)+1) : (Math.floor(Math.random()*20)+8))
+  };
+  if(["tech","exotic","artifact","gold","gem","diamond","void_essence","relic"].includes(r.type)){
+    r.x = (r.x + (Math.random()>0.5?gridWidth/4:-gridWidth/4) + gridWidth) % gridWidth;
+    r.y = (r.y + (Math.random()>0.5?gridHeight/4:-gridHeight/4) + gridHeight) % gridHeight;
+  }
+  // Bias by biome
+  const biome = getBiome(r.x, r.y);
+  if (biome === "nebula" && Math.random() < 0.3) r.type = "exotic";
+  if (biome === "belt" && Math.random() < 0.3) r.type = "mats";
+  resources.push(r); addToBucket(resourceBuckets,r);
+}
+
+/* start resources adaptive to world size */
+for(let i=0;i<9000;i++) spawnResource();
+
+/* building factory */
+function createBuilding(type,x,y,meta=null,factionId=null){
+  const b = { id:'B'+(Math.random()*1e9|0), type,x,y,timer:0,meta:meta||{},faction:factionId };
+  if(type==='dyson' || type==='warp' || type==='portal') { b.scale = 3; b.chain = []; }
+  buildings.push(b); addToBucket(buildingBuckets,b);
+  // Add particle effect for building creation
+  for(let i=0;i<10;i++){
+    particles.push({
+      x: x + Math.random()*10-5,
+      y: y + Math.random()*10-5,
+      vx: Math.random()*2-1,
+      vy: Math.random()*2-1,
+      life: 60,
+      color: '#ffcc00',
+      size: 2
+    });
+  }
+  return b;
+}
+
+/* NPC factory */
+const traits = ["Builder","Scholar","Warrior","Artist","Collector","Mystic","Spy","Explorer","Trader","Inventor","Nomad","Mutant","Hybrid","Ascended","Smuggler","Preacher"]; // Added Preacher for Ideology Propagation
+function createNPC(parent=null,factionId=null){
+  const age = parent ? (generation - parent.birthGen) + Math.random()*10 : 0; // Start young if inherited
+  const personality = { // Dynamic NPC Personalities
+    aggressive: Math.random(),
+    curious: Math.random(),
+    loyal: Math.random()
+  };
+  const familyId = parent ? parent.familyId : 'FAM' + (Math.random()*1e6|0); // Family Dynasties
+  const t = {
+    id: 'T'+(idCounter++),
+    x: parent ? (parent.x + (Math.random()*20-10) + gridWidth)%gridWidth : Math.random()*gridWidth,
+    y: parent ? (parent.y + (Math.random()*20-10) + gridHeight)%gridHeight : Math.random()*gridHeight,
+    energy: 200 + Math.random()*80,
+    mats: parent ? parent.mats * 0.2 + Math.random()*5 : 0, // Inheritance
+    rare: parent ? parent.rare * 0.2 + Math.random()*2 : 0,
+    culture: parent ? parent.culture * 0.2 + Math.random()*3 : 0,
+    coins: parent ? parent.coins * 0.1 + Math.random()*2 : 5,
+    tech: parent ? parent.tech * 0.2 + Math.random()*1 : 0,
+    exotic: parent ? parent.exotic * 0.2 : 0,
+    artifacts: parent ? parent.artifacts * 0.1 : 0,
+    trait: traits[Math.floor(Math.random()*traits.length)],
+    traitLevel: parent && parent.trait === traits[Math.floor(Math.random()*traits.length)] ? Math.min(3, (parent.traitLevel || 1) + 0.5) : 1, // Inheritance
+    personality, // Dynamic personalities
+    age, // NPC Aging
+    familyId, // Dynasties
+    state: 'roam',
+    name: 'NPC-'+(idCounter+1000).toString(36).toUpperCase(),
+    gender: Math.random() < 0.5 ? 'M' : 'F', // For romances
+    parents: parent ? [parent.id] : [], // Family Dynasties
+    relationships: new Map(), // For NPC Relationships & Romances
+    birthGen: generation,
+    children:0, buildingsBuilt:0, glowTimer:0, faith:null, spaceship:false, travelDevice:false, faction: factionId || factions[0].id, legend: false,
+    targetX: null, targetY: null, travelProgress: 0,
+    saga: ""
+  };
+  if(Math.random()<0.002) { t.legend = true; t.name = '☥' + t.name; t.trait = 'Legend'; }
+  npcs.push(t); addToBucket(npcBuckets,t); return t;
+}
+
+/* seed initial colony NPCs and buildings */
+seeding = true; // begin seeding first 6 colonies
+
+const numStartingColonies = 7; // added g00bs colony
+const colonyNames = ['Dundies', 'Dongs', 'Nuddies', 'Solzillas', 'DeFiTiMeZ', "Pinky's", 'g00bs']; // g00bs added
+for(let col=0; col<numStartingColonies; col++){
+
+  const fname = colonyNames[col];
+  const color = col === 0 ? 'ff0000' :
+                col === 1 ? 'ffffff' :
+                col === 2 ? '00ff00' :
+                col === 3 ? 'ffff00' :
+                col === 4 ? '0000ff' :
+                col === 5 ? 'ffa500' :
+                '8000ff'; // g00bs purple color
+  // add g00bs color
+  const g00bsColor = 'ff66cc';
+  const f = newFaction(fname, color);
+  // Assign initial leader
+  const spawnX = Math.random() * gridWidth;
+  const spawnY = Math.random() * gridHeight;
+  const numFarms = 3;
+  for(let i=0;i<numFarms;i++) createBuilding('farm', spawnX + Math.random()*120-60, spawnY + Math.random()*120-60,{},f.id);
+  const numNPCs = 80;
+  let potentialLeader = null;
+  for(let i=0;i<numNPCs;i++){ 
+    const t=createNPC(null,f.id); 
+    t.x = spawnX + Math.random()*600-300; 
+    t.y = spawnY + Math.random()*600-300; 
+    if(Math.random() < 0.3) t.trait = 'Explorer';
+    if (!potentialLeader && (t.trait === 'Scholar' || t.trait === 'Warrior')) potentialLeader = t;
+  }
+  if (potentialLeader) {
+    f.leader = potentialLeader.id;
+    potentialLeader.saga += " Elected as faction leader. ";
+  }
+}
+seeding = false; // end seeding — block further colony creation
+prevPop = npcs.length;
+popGrowth = 0;
+
+/* NPC details modal */
+let selectedNPC = null;
+function showNPCDetails(t) {
+  selectedNPC = t;
+  document.getElementById('npc-name').textContent = t.name;
+  let dynastyHTML = '';
+  if (t.parents.length > 0) {
+    dynastyHTML = `<div class="statbox">Dynasty: Descended from ${t.parents.map(p => npcs.find(n => n.id === p)?.name || 'Unknown').join(', ')}</div>`;
+  }
+  let personalityHTML = `<div class="statbox">Personality: Aggressive ${Math.floor(t.personality.aggressive*10)}, Curious ${Math.floor(t.personality.curious*10)}, Loyal ${Math.floor(t.personality.loyal*10)}</div>`;
+  let ageHTML = `<div class="statbox">Age: <span class="stat">${t.age.toFixed(0)}</span> (Stage: ${t.age < 20 ? 'Youth' : t.age < 60 ? 'Adult' : 'Elder'})</div>`;
+  document.getElementById('npc-details').innerHTML = `
+    <div class="statbox">Trait: <span class="stat">${t.trait} (Lv ${t.traitLevel})</span></div>
+    <div class="statbox">Faction: <span class="stat">${t.faction}</span></div>
+    <div class="statbox">Gender: <span class="stat">${t.gender}</span></div>
+    <div class="statbox">Energy: <span class="stat">${t.energy.toFixed(2)}</span></div>
+    <div class="statbox">Children: <span class="stat">${t.children}</span></div>
+    <div class="statbox">Buildings Built: <span class="stat">${t.buildingsBuilt}</span></div>
+    <div class="statbox">Relationships: <span class="stat">${t.relationships.size}</span></div>
+    ${dynastyHTML}
+    ${personalityHTML}
+    ${ageHTML}
+    <div class="statbox">Saga: <span class="stat">${t.saga || 'None'}</span></div>
+  `;
+  document.getElementById('npc-modal').style.display = 'flex';
+  document.getElementById('follow-npc').onclick = () => {
+    if (selectedNPC) {
+      cameraX = selectedNPC.x;
+      cameraY = selectedNPC.y;
+      zoom = 5;
+      clampCam();
+    }
+  };
+}
+
+/* ---------- grouped event log (throttled) ---------- */
+const eventQueue = [];
+const groupedEvents = [];
+function pushEvent(type, msg, pos=null){
+  const now = Date.now();
+  eventQueue.push({type,msg,pos, t:now});
+}
+function flushEventQueue(){
+  if(eventQueue.length===0) return;
+  const buckets = {};
+  eventQueue.forEach(e=>{
+    const key = e.type + '|' + (e.msg.length>60 ? e.msg.slice(0,40) + '...' : e.msg);
+    if(!buckets[key]) buckets[key] = {count:0, msgs:[], last:e.t, pos:e.pos};
+    buckets[key].count++; buckets[key].msgs.push(e.msg); buckets[key].last = Math.max(buckets[key].last,e.t);
+  });
+  Object.keys(buckets).forEach(k=>{
+    const b = buckets[k];
+    const primary = b.msgs[0];
+    const final = (b.count>1) ? `(${b.count}x) ${primary}` : primary;
+    groupedEvents.unshift(`Gen ${generation}: ${final}`);
+  });
+  while(groupedEvents.length>60) groupedEvents.pop();
+  eventQueue.length=0;
+  document.getElementById('event-log').innerHTML = groupedEvents.join('<br>');
+}
+
+/* periodically flush */
+setInterval(flushEventQueue, 900);
+
+/* tech tiers */
+const tiers = [
+  {name:'Pioneer',desc:'Basic tools & curiosity', threshold:0},
+  {name:'Industrial',desc:'Factories & primitives', threshold:500},
+  {name:'Advanced',desc:'Spacecraft & portals', threshold:2000},
+  {name:'Galactic',desc:'Star engines & wonders', threshold:8000}
+];
+let currentTier = tiers[0];
+
+function updateTier(){
+  const pop = npcs.length;
+  let tier = tiers[0];
+  for(let i=tiers.length-1;i>=0;i--) if(pop>=tiers[i].threshold) { tier=tiers[i]; break; }
+  if(tier.name !== currentTier.name){
+    currentTier = tier;
+    document.getElementById('tier-name').textContent = currentTier.name;
+    document.getElementById('tier-desc').textContent = currentTier.desc;
+    majorEvents.unshift(`Gen ${generation}: TECH TIER ADVANCED → ${currentTier.name}!`);
+    if(majorEvents.length>12) majorEvents.pop();
+    document.getElementById('major-events').innerHTML = majorEvents.join('<br>');
+    cameraShake = 5; shakeTimer = 30; // Camera shake on tier upgrade
+  }
+}
+
+/* ---------- game update loop ---------- */
+function update(){
+  generation++;
+  popGrowth = npcs.length - prevPop;
+  // Currency Fluctuations: Adjust based on trade volume (global average)
+  let totalTrade = 0;
+  factions.forEach(f => totalTrade += f.tradeRoutes.length * 10 * f.economyIndex);
+  economyIndex = Math.max(0.5, Math.min(2.0, 1.0 + (totalTrade / 10000 - 0.5)));
+  // Per-faction economy adjustments from sanctions
+  factions.forEach(f => {
+    let sanctionPenalty = 1.0;
+    factions.forEach(other => {
+      if (other !== f && other.sanctions.has(f.id)) {
+        sanctionPenalty *= 0.9; // -10% per sanction
+      }
+    });
+    f.economyIndex = Math.max(0.5, f.economyIndex * sanctionPenalty + 0.01 * (Math.random() - 0.5)); // Slight fluctuation
+  });
+  // Alien Interference - biased towards Dundies
+  if(!alienEvent && Math.random() < 0.0002) {
+    let type, targetFaction;
+    const dundiesF = factions.find(f => f.id === 'F1');
+    if (Math.random() < 0.4) { // 40% abduction to non-Dundies
+      const otherFactions = factions.filter(f => f.id !== 'F1');
+      if (otherFactions.length > 0) {
+        type = 'abduction';
+        targetFaction = otherFactions[Math.floor(Math.random() * otherFactions.length)].id;
+      } else {
+        type = 'gift';
+        targetFaction = 'F1';
+      }
+    } else { // 60% gift to Dundies
+      type = 'gift';
+      targetFaction = 'F1';
+    }
+    alienEvent = {type, targetFaction, timer: 120};
+    majorEvents.unshift(`Gen ${generation}: 👽 ALIEN FLEET DETECTED — ${alienEvent.type.toUpperCase()} inbound!`);
+  }
+  if(alienEvent) {
+    alienEvent.timer--;
+    const targetF = factions.find(f => f.id === alienEvent.targetFaction);
+    if(alienEvent.type === 'abduction') {
+      const abductees = npcs.filter(t => t.faction === targetF.id).slice(0, Math.floor(targetF.members * 0.04)); // Reduced from 0.08
+      abductees.forEach(a => { a.dead = true; pushEvent('abduct', `${a.name} probed and vanished!`); });
+    } else { // gift
+      npcs.filter(t => t.faction === targetF.id).forEach(t => { t.tech += 3; t.exotic += 2; });
+      pushEvent('gift', `Aliens blessed ${targetF.name} with forbidden tech!`);
+    }
+    if(alienEvent.timer <= 0) alienEvent = null;
+  }
+  // Faction Mergers and Betrayals
+  if (generation % 100 === 0) { // Check every 100 gens
+    for (let i = 0; i < factions.length; i++) {
+      for (let j = i + 1; j < factions.length; j++) {
+        const f1 = factions[i], f2 = factions[j];
+        const rel = f1.relations.get(f2.id);
+        if (!rel) continue;
+        // Bias by ideology
+        const ideologyMatch = f1.ideology === f2.ideology ? 1.2 : 0.8;
+        if (rel.trust * ideologyMatch > 90 && Math.random() < 0.01) { // High trust merge
+          mergeFactions(f1, f2);
+          return; // One per cycle
+        } else if (rel.trust * ideologyMatch < 10 && Math.random() < 0.02 * ((f1.id === 'F1' || f2.id === 'F1') ? 0.5 : 1)) { // Low trust betrayal, reduced for Dundies
+          betrayalEvent(f1, f2);
+        }
+      }
+    }
+  }
+  // Faction Elections - adjusted for government
+  if (generation % (factions[0]?.government === 'Democracy' ? 200 : 500) === 0) { // More frequent in democracies
+    factions.forEach(f => {
+      if (!f.leader) return;
+      const factionNPCs = npcs.filter(t => t.faction === f.id && !t.dead);
+      if (factionNPCs.length < 5) return; // Too small for election
+      // Select new leader based on traits and ideology fit
+      let candidates = factionNPCs.filter(t => {
+        if (f.ideology === 'Militaristic' && t.trait === 'Warrior') return true;
+        if (f.ideology === 'Pacifist' && t.trait === 'Artist') return true;
+        return t.trait === 'Scholar' || t.trait === 'Warrior' || t.trait === 'Builder';
+      });
+      if (candidates.length === 0) candidates = factionNPCs;
+      const newLeader = candidates[Math.floor(Math.random() * candidates.length)];
+      if (newLeader.id !== f.leader) {
+        const oldLeader = npcs.find(t => t.id === f.leader);
+        if (oldLeader) oldLeader.saga += " Deposed as leader. ";
+        f.leader = newLeader.id;
+        newLeader.saga += " Elected as new leader! ";
+        pushEvent('election', `${newLeader.name} elected leader of ${f.name}!`);
+        // Autocracy coup risk
+        if (f.government === 'Autocracy' && Math.random() < 0.1) {
+          const coupVictim = npcs.find(t => t.id === newLeader.id);
+          if (coupVictim) {
+            coupVictim.dead = true;
+            pushEvent('coup', `Coup in ${f.name}: Leader assassinated!`);
+          }
+        }
+      }
+    });
+  }
+  // Economic Sanctions
+  if (generation % 50 === 0) {
+    factions.forEach(f => {
+      factions.forEach(other => {
+        if (other !== f && f.relations.get(other.id)?.enemy && Math.random() < 0.05) { // Chance to impose
+          other.sanctions.add(f.id);
+          pushEvent('sanction', `${f.name} imposed sanctions on ${other.name}!`);
+        }
+      });
+    });
+  }
+  // Ecosystem Balance: Mutant Swarms
+  if (terraformCount > 50 && Math.random() < 0.001) {
+    const swarmX = Math.random() * gridWidth;
+    const swarmY = Math.random() * gridHeight;
+    for (let i = 0; i < 8; i++) {
+      const mutant = createNPC(null, null); // Neutral/hostile
+      mutant.trait = 'Mutant';
+      mutant.x = swarmX + (Math.random() - 0.5) * 100;
+      mutant.y = swarmY + (Math.random() - 0.5) * 100;
+      mutant.saga = "Spawned from ecosystem imbalance.";
+      // Make them attack nearby buildings
+      const nearbyB = getNearbyFromBuckets(buildingBuckets, mutant.x, mutant.y, 50);
+      if (nearbyB.length > 0) {
+        const targetB = nearbyB[Math.floor(Math.random() * nearbyB.length)];
+        // Simulate attack: damage building timer or something
+        targetB.timer += 100; // Accelerate decay
+        pushEvent('swarm', `Mutant swarm attacks ${targetB.type} near (${Math.floor(swarmX)},${Math.floor(swarmY)})!`);
+      }
+    }
+    majorEvents.unshift(`Gen ${generation}: 🦠 Mutant Swarm from Terraform Overload!`);
+    terraformCount = Math.max(0, terraformCount - 10); // Reduce count slightly
+  }
+  // Update camera shake
+  if(shakeTimer > 0){
+    shakeTimer--;
+    cameraX += (Math.random() - 0.5) * cameraShake;
+    cameraY += (Math.random() - 0.5) * cameraShake;
+    clampCam();
+  }
+  // Terraforming with factories
+  buildings.filter(b => b.type === 'factory').forEach(b => {
+    if (Math.random() < 0.001 && b.timer % 100 === 0) { // Rare event
+      const newBiome = ['nebula', 'belt', 'void'][Math.floor(Math.random() * 3)];
+      terraform(b.x, b.y, newBiome);
+      pushEvent('terraform', `Factory terraformed area to ${newBiome}!`);
+    }
+  });
+  // Ecology Labs restore balance
+  buildings.filter(b => b.type === 'ecology_lab').forEach(b => {
+    if (Math.random() < 0.005) {
+      terraformCount = Math.max(0, terraformCount - 1);
+      pushEvent('restore', `Ecology lab restores balance near ${b.x},${b.y}!`);
+    }
+  });
+  // Resource Trading Networks - use faction economy
+  factions.forEach(f => {
+    f.tradeRoutes.forEach(route => {
+      if (Math.random() < 0.05) { // Simulate exchange
+        const distBonus = Math.hypot(route.fromMarket.x - route.toMarket.x, route.fromMarket.y - route.toMarket.y) / 1000;
+        const exchangeAmt = (1 + distBonus) * f.economyIndex; // Faction-specific
+        // Simple exchange: mats for tech
+        route.fromMarket.meta.mats -= exchangeAmt; // Pseudo-storage
+        route.toMarket.meta.tech += exchangeAmt;
+        // Tax
+        f.tech += 0.1; // Faction gains
+        pushEvent('trade', `Trade route exchanged ${exchangeAmt.toFixed(1)} resources!`);
+      }
+    });
+  });
+  // Staggered NPC updates - mobile opt: more stagger if slow
+  const dt = performance.now() - lastTime;
+  const stagger = dt > 16 ? 6 : 3; // Heavier stagger on slow frames
+  const group = generation % stagger;
+  for(let i=0;i<npcs.length;i++){
+    if(i % stagger !== group) continue;
+    const t = npcs[i];
+    const f = factions.find(ff => ff.id === t.faction);
+    const biome = getBiome(t.x, t.y);
+    t.age++; // Increment age each generation
+    // Life Stages buffs/debuffs
+    if (t.age < 20) { t.energy += 0.02; } // Youth: +energy
+    else if (t.age < 60) { /* Adult: balanced */ }
+    else { t.culture += 0.03; t.energy -= 0.02; } // Elder: +culture, -energy
+    // Mid-life crisis
+    if (Math.floor(t.age) === 40 && Math.random() < 0.05) {
+      t.trait = traits[Math.floor(Math.random()*traits.length)]; // Change trait
+      t.saga += " Mid-life crisis: new path. ";
+      pushEvent('crisis', `${t.name} had a mid-life crisis and changed!`);
+      // Chance to migrate
+      if (Math.random() < 0.3) {
+        t.targetX = Math.random() * gridWidth;
+        t.targetY = Math.random() * gridHeight;
+        t.travelProgress = 1;
+      }
+    }
+    // Dynasty bonus: if many family members, +loyal
+    const familyMembers = npcs.filter(n => n.familyId === t.familyId && !n.dead).length;
+    if (familyMembers > 5) {
+      t.personality.loyal = Math.min(1, t.personality.loyal + 0.01); // Loyalty boost
+      t.coins += 0.01 * familyMembers; // Family wealth
+    }
+    const drainMultiplier = (t.faction === 'F1' ? 0.7 : 1); // Dundies lower drain
+    t.energy -= (0.03 + Math.random()*0.01) * drainMultiplier;
+    if (biome === "belt") t.energy -= 0.01 * drainMultiplier;
+
+    // Biome buffs
+    if (biome === "nebula") t.exotic += 0.005;
+    if (biome === "belt") t.mats += 0.01;
+
+    // Leader Buffs
+    if (f && f.leader === t.id) {
+      if (t.trait === 'Scholar') t.culture += 0.05; // Faction-wide, but apply to leader for simplicity
+      if (t.trait === 'Warrior') t.energy += 0.05;
+      if (t.trait === 'Builder') t.mats += 0.03;
+      // Propagate to faction research if Scholar
+      if (t.trait === 'Scholar') {
+        ['military', 'cultural', 'industrial'].forEach(branch => {
+          f.research[branch].forEach(res => res.progress += 0.2);
+        });
+      }
+    }
+
+    // Dynamic Trait Evolution - influenced by personality
+    const evolutionThresholds = {culture: 50, tech: 30, energy: 300}; // Example thresholds
+    if (t.culture > evolutionThresholds.culture && t.trait === 'Scholar' && t.personality.curious > 0.7) {
+      t.trait = 'Sage'; t.traitLevel = 2; t.saga += 'Evolved to Sage. '; pushEvent('evolve', `${t.name} evolved to ${t.trait}!`);
+    } else if (t.tech > evolutionThresholds.tech && t.trait === 'Inventor') {
+      t.trait = 'Master Inventor'; t.traitLevel = 2; t.saga += 'Evolved to Master Inventor. '; pushEvent('evolve', `${t.name} evolved to ${t.trait}!`);
+    }
+
+    // Movement
+    let dx = 0, dy = 0;
+    const roamAngle = (generation * 0.01 + parseInt(t.id.slice(1)) * 0.1) % (Math.PI * 2);
+    dx = Math.cos(roamAngle) * 0.5;
+    dy = Math.sin(roamAngle) * 0.5;
+    if (t.targetX !== null && t.travelProgress > 0) {
+      const dirX = t.targetX - t.x;
+      const dirY = t.targetY - t.y;
+      const dist = Math.hypot(dirX, dirY);
+      if (dist > 0.5) {
+        dx = dirX / dist * (t.spaceship ? 2 : 0.8);
+        dy = dirY / dist * (t.spaceship ? 2 : 0.8);
+        t.travelProgress += 0.01;
+      } else {
+        t.targetX = null;
+        t.targetY = null;
+        t.travelProgress = 0;
+      }
+    }
+
+    // Incremental bucket update for NPC movement
+    const oldKey = bucketKey(t.x, t.y);
+    t.x = (t.x + dx + gridWidth) % gridWidth;
+    t.y = (t.y + dy + gridHeight) % gridHeight;
+    const newKey = bucketKey(t.x, t.y);
+    if (oldKey !== newKey) {
+      removeFromBucket(npcBuckets, t, oldKey);
+      addToBucket(npcBuckets, t);
+    }
+    // Explore for faction
+    if (f) f.explored.add(newKey);
+
+    const nearbyRes = getNearbyFromBuckets(resourceBuckets, t.x, t.y, 6);
+    nearbyRes.forEach(r=>{
+      if(r.amount<=0) return;
+      const dist = Math.hypot(t.x - r.x, t.y - r.y);
+      if(dist < 6){
+        const gainMultiplier = (t.faction === 'F1' ? 1.2 : 1); // Dundies better gathering
+        if(r.type==='energy') t.energy += 15 * gainMultiplier; // Increased from 12
+        else if(r.type==='mats') t.mats += 1 * gainMultiplier;
+        else if(r.type==='rare') t.rare += 1 * gainMultiplier;
+        else if(r.type==='culture') t.culture += 1 * gainMultiplier;
+        else if(r.type==='tech') t.tech += 1 * gainMultiplier;
+        else if(r.type==='exotic') t.exotic += 1 * gainMultiplier;
+        else if(r.type==='artifact') { t.artifacts += 1 * gainMultiplier; t.culture += 2 * gainMultiplier; }
+        else if(r.type==='gold'){ t.coins += 5 * f.economyIndex * gainMultiplier; } // Faction economy
+        else if(r.type==='gem'){ t.rare += 2 * gainMultiplier; }
+        else if(r.type==='diamond'){ t.rare += 3 * gainMultiplier; }
+        else if(r.type==='void_essence') { 
+          if (Math.random() < 0.1) {
+            t.trait = 'Ascended';
+            t.saga += " Ascended via void essence. ";
+            t.energy += 50;
+            pushEvent('ascend', `${t.name} ascended!`);
+          }
+        }
+        else if(r.type==='relic') {
+          const relicEvents = ['UFO VISIT — tech gifted!', 'WONDER DISCOVERED!'];
+          const event = relicEvents[Math.floor(Math.random()*relicEvents.length)];
+          majorEvents.unshift(`Gen ${generation}: ${event}`);
+          pushEvent('relic', `${t.name} activated a relic: ${event}`);
+        }
+        r.amount--;
+        // Particle effect for resource gathering
+        for(let j=0;j<5;j++){
+          particles.push({
+            x: r.x, y: r.y,
+            vx: Math.random()*2-1,
+            vy: Math.random()*2-1,
+            life: 30,
+            color: '#ffff00',
+            size: 1
+          });
+        }
+        if(["artifact","gold","diamond","gem","exotic","void_essence","relic"].includes(r.type)){
+          pushEvent('find', `${t.name} found ${r.type}!`, {x:t.x,y:t.y});
+        }
+      }
+    });
+
+    const nearB = getNearbyFromBuckets(buildingBuckets, t.x, t.y, 12);
+    let nearFort=false, nearTemple=null;
+    for(const b of nearB){
+      const dist = Math.hypot(t.x-b.x, t.y-b.y);
+      if(dist<12){
+        const gainMultiplier = (t.faction === 'F1' ? 1.2 : 1); // Dundies better building buffs
+        if(b.type==='farm'){ t.energy += 0.5 * gainMultiplier; if(Math.random()<0.002) pushEvent('social', `${t.name} shared a meal at a Farm.`); } // Increased from 0.4
+        if(b.type==='mine'){ t.mats += 0.03 * gainMultiplier; }
+        if(b.type==='temple'){ t.culture += 0.08 * gainMultiplier; nearTemple = b; }
+        if(b.type==='fortress'){ t.energy += 0.1 * gainMultiplier; nearFort = true; } // Increased from 0.08
+        if(b.type==='market'){ t.coins += 0.05 * f.economyIndex * gainMultiplier; } // Faction economy
+        if(b.type==='factory'){ t.tech += 0.02 * gainMultiplier; if(t.tech>4 && Math.random()< 0.004){ t.spaceship=true; t.tech-=4; pushEvent('build', `${t.name} built a Spaceship!`); } }
+        if(b.type==='portal'){ t.exotic += 0.01 * gainMultiplier; if(t.exotic>3 && Math.random()< 0.01){ t.travelDevice=true; t.exotic-=3; pushEvent('build', `${t.name} built a Travel Device!`); } }
+        if(b.type==='observatory'){ t.culture += 0.1 * gainMultiplier; /* explore nearby */ const nearKey = getNearbyFromBuckets(npcBuckets, t.x, t.y, 100).map(n => bucketKey(n.x,n.y)); nearKey.forEach(k => f.explored.add(k)); }
+        if(b.type==='hive'){ /* birth boost later */ }
+        if(b.type==='relic_forge'){ t.tech += 0.05 * gainMultiplier; ['military', 'cultural', 'industrial'].forEach(branch => f.research[branch].forEach(res => res.progress += 0.3)); } // Artifact crafting boost
+        if(b.type==='ecology_lab'){ t.culture += 0.02 * gainMultiplier; } // Minor buff
+        if(b.type==='black_market_hub'){ // Black Market Hubs
+          t.coins += 0.1 * f.economyIndex * gainMultiplier;
+          if (Math.random() < 0.02) {
+            t.exotic += 1 * gainMultiplier; // Rare contraband
+            pushEvent('blackmarket', `${t.name} acquired contraband at black market!`);
+          }
+        }
+      }
+    }
+
+    if(nearTemple && !t.faith && Math.random()< 0.004){
+      t.faith = nearTemple.meta.faith || `Faith-${Math.floor(Math.random()*1000)}`;
+      pushEvent('faith', `${t.name} joined ${t.faith}`);
+    }
+
+    if(t.trait==='Scholar') t.culture += 0.02;
+    if(t.trait==='Warrior') t.energy += 0.03; // Increased from 0.02
+    if(t.trait==='Inventor') { t.tech += 0.015; if(f) ['military', 'cultural', 'industrial'].forEach(branch => f.research[branch][0].progress += 0.1); } // contribute to research
+    if(t.trait==='Trader') t.coins += 0.02 * f.economyIndex;
+    if(t.trait==='Explorer') t.exotic += 0.005;
+    if(t.trait==='Mutant') { t.energy += 0.05; if(Math.random()<0.00005) t.dead=true; } // Reduced death chance from 0.0001
+    if(t.trait==='Ascended') { t.energy += 0.03; t.tech += 0.01; }
+    if(t.trait==='Smuggler') { t.coins += 0.03 * f.economyIndex; } // Black market bonus
+    if(t.trait === 'Spy') { t.tech += 0.01; } // Spy bonus
+    if(t.trait === 'Preacher') { t.culture += 0.02; } // Preacher bonus
+
+    // Dundies thriving bonus
+    if (t.faction === 'F1') {
+      t.energy += 0.02;
+      t.mats += 0.01;
+      t.culture += 0.01;
+      t.coins += 0.01 * f.economyIndex;
+    }
+
+    // NPC Relationships & Romances - influenced by personality
+    const nearbyT = getNearbyFromBuckets(npcBuckets, t.x, t.y, 10);
+    for(const other of nearbyT){
+      if(other === t) continue;
+      let rel = t.relationships.get(other.id);
+      if (!rel) {
+        rel = {trust: 50, type: 'acquaintance'};
+        t.relationships.set(other.id, rel);
+        other.relationships.set(t.id, rel);
+      }
+      const sameFactionOrAlly = other.faction === t.faction || (f && f.relations.get(other.faction)?.ally);
+      if (sameFactionOrAlly && Math.random() < 0.001 * (1 + t.personality.loyal)) {
+        rel.trust += 5;
+        if (rel.trust > 80 && Math.random() < 0.01 && t.gender !== other.gender) {
+          rel.type = 'lover';
+          t.saga += ` In love with ${other.name}. `;
+          other.saga += ` In love with ${t.name}. `;
+          pushEvent('romance', `${t.name} and ${other.name} fell in love!`);
+        } else if (rel.trust > 70) {
+          rel.type = 'friend';
+          pushEvent('friend', `${t.name} befriended ${other.name}!`);
+        }
+      }
+    }
+
+    // Research progress check for branches
+    if (f) {
+      ['military', 'cultural', 'industrial'].forEach(branch => {
+        f.research[branch].forEach(res => {
+          if (!res.unlocked && res.progress >= res.cost) {
+            res.unlocked = true;
+            res.unlock();
+            pushEvent('research', `${f.name} unlocked ${branch}: ${res.name}!`);
+          }
+        });
+      });
+    }
+
+    // Birth chance boosted for hive, romances, inherit traits - dynasty
+    let birthMultiplier = 1;
+    if (nearB.some(b => b.type === 'hive')) birthMultiplier = 1.5;
+    const romanceBoost = Array.from(t.relationships.values()).some(r => r.type === 'lover') ? 2 : 1;
+    const baseBirthChance = 0.0003 * birthMultiplier * romanceBoost; // Increased from 0.0002
+    const birthChance = baseBirthChance * (t.faction === 'F1' ? 1.4 : 1); // Dundies higher birth
+    if(t.energy>120 && Math.random()<birthChance){
+      const kid = createNPC(t, t.faction); // Pass parent for dynasty
+      // Inherit more stats
+      kid.mats += t.mats * 0.1;
+      kid.rare += t.rare * 0.1;
+      kid.culture += t.culture * 0.1;
+      kid.coins += t.coins * 0.05;
+      kid.tech += t.tech * 0.1;
+      kid.exotic += t.exotic * 0.1;
+      kid.artifacts += Math.floor(t.artifacts * 0.05);
+      pushEvent('birth', `${t.name} gave birth to ${kid.name}`);
+      t.energy -= 60; t.children++;
+      // Faction Evolution: Mutation
+      if(generation > 1000 && Math.random() < 0.0005) { // Mutation chance
+        kid.trait = 'Mutant'; kid.saga = 'Born twisted by void rays';
+        kid.energy += 50; // Buff, but higher death risk later
+        pushEvent('mutation', `${kid.name} mutated into a ${kid.trait}!`);
+      }
+      // Hybrid cult: If parents from enemy factions (rare merge)
+      if(Math.random() < 0.001 && t.children > 3) {
+        kid.faith = 'Hybrid Cult'; kid.faction = t.faction;
+        pushEvent('hybrid', `${kid.name} bridges feuds with forbidden faith!`);
+      }
+      // Hive overpop risk - skip for Dundies
+      if (nearB.some(b => b.type === 'hive') && f.members > 200 && Math.random() < 0.001 && f.id !== 'F1') {
+        const overpopLoss = Math.floor(f.members * 0.1);
+        for(let k=0; k<overpopLoss; k++) {
+          const victim = npcs.find(n => n.faction === f.id && !n.dead);
+          if (victim) victim.dead = true;
+        }
+        pushEvent('overpop', `Hive overpopulation in ${f.name}: ${overpopLoss} lost!`);
+      }
+    }
+
+    // Resource Fusion
+    if (t.mats > 5 && t.exotic > 1 && Math.random() < 0.005 && t.trait === 'Inventor') {
+      t.mats -= 5; t.exotic -= 1;
+      t.tech += 2; // Fuse to nanobots
+      pushEvent('fusion', `${t.name} fused mats + exotic into advanced tech!`);
+    }
+
+    // Build chance with artifact crafting, ideology bias
+    const baseBuildChance = t.trait==='Builder'?0.012:0.004;
+    let buildChance = baseBuildChance;
+    if (f.ideology === 'Militaristic') buildChance *= 1.2; // Bias towards forts
+    if (f.ideology === 'Pacifist') buildChance *= 0.8; // Less builds
+    if(t.mats>8 && t.rare>2 && Math.random() < buildChance){
+      let types = ['farm','mine','temple','fortress','market','observatory','hive','ecology_lab'];
+      if(t.tech>3) types.push('factory');
+      if(t.exotic>1) types.push('portal');
+      if(t.tech>10) types.push('dyson','warp');
+      if (t.coins > 20 && Math.random() < 0.1) types.push('black_market_hub'); // Black Market Hubs
+      // Artifact Crafting
+      if (t.artifacts > 2 && t.tech > 5 && Math.random() < 0.02) {
+        const craftType = 'relic_forge';
+        createBuilding(craftType, t.x + Math.random()*8-4, t.y + Math.random()*8-4, {faith:t.faith}, t.faction);
+        t.artifacts -= 2; t.tech -= 5; t.buildingsBuilt++;
+        pushEvent('craft', `${t.name} crafted a ${craftType}!`);
+      } else {
+        const type = types[Math.floor(Math.random()*types.length)];
+        createBuilding(type, t.x + Math.random()*8-4, t.y + Math.random()*8-4, {faith:t.faith}, t.faction);
+        t.mats -= 5; t.rare -= 2; t.buildingsBuilt++;
+        pushEvent('build', `${t.name} built a ${type}`);
+      }
+    }
+    // Cosmic Wonders
+    if(t.buildingsBuilt > 10 && t.tech > 10 && Math.random() < 0.0001) {
+      const mega = createBuilding(['dyson','warp'][Math.floor(Math.random()*2)], t.x, t.y, {chain: true}, t.faction);
+      pushEvent('mega', `${t.name} ignited a ${mega.type}—reality bends!`);
+      // Chain: Nearby NPCs boost, but 5% risk of rift
+      getNearbyFromBuckets(npcBuckets, t.x, t.y, 200).forEach(n => {
+        if(Math.random() < 0.03) { n.dead = true; pushEvent('rift', `${n.name} sucked into the void!`); } // Reduced from 0.05
+        else n.tech += 1;
+      });
+    }
+
+    if(ALLOW_NEW_COLONIES && t.trait === 'Explorer' && t.mats > 10 && t.rare > 3 && Math.random() < 0.005){
+      const nearbyB = getNearbyFromBuckets(buildingBuckets, t.x, t.y, 500);
+      if(nearbyB.length === 0){
+        const fname = `Outpost-${idCounter++}`;
+        let color;
+        do {
+          color = (Math.random()*0xffffff|0).toString(16).padStart(6,'0');
+        } while (factions.some(f => f.color === color) || forbiddenHex.has(color));
+        const f = newFaction(fname, color);
+        t.faction = f.id;
+        createBuilding('farm', t.x + Math.random()*20-10, t.y + Math.random()*20-10, {}, f.id);
+        for(let i=0;i<3;i++){
+          const newT = createNPC(t, f.id);
+          newT.x = t.x + Math.random()*50-25;
+          newT.y = t.y + Math.random()*50-25;
+        }
+        pushEvent('colony', `${t.name} founded ${fname} at (${Math.floor(t.x)},${Math.floor(t.y)})!`);
+        t.mats -= 10; t.rare -= 3;
+      }
+    }
+
+    if(t.trait === 'Explorer' && Math.random() < 0.002){
+      const eventType = Math.random() < 0.5 ? 'resource' : 'artifact';
+      if(eventType === 'resource'){
+        spawnResource('exotic', t.x + Math.random()*20-10, t.y + Math.random()*20-10);
+        pushEvent('explore', `${t.name} discovered exotic resources!`);
+      } else {
+        spawnResource('artifact', t.x + Math.random()*20-10, t.y + Math.random()*20-10);
+        pushEvent('explore', `${t.name} found an ancient artifact!`);
+      }
+    }
+
+    if(t.trait !== 'Explorer'){
+      const nearbyT = getNearbyFromBuckets(npcBuckets, t.x, t.y, 10);
+      for(const other of nearbyT){
+        if(other === t || other.faction === t.faction) continue;
+        const faction = factions.find(f => f.id === t.faction);
+        const otherF = factions.find(f => f.id === other.faction);
+        let conflictChance = 0.008 * (1 + t.personality.aggressive); // Personality influence
+        conflictChance *= (t.faction === 'F1' ? 0.5 : 1); // Dundies less conflict
+        // Ideology conflict bias
+        let ideologyBias = 1;
+        if (faction.ideology === 'Militaristic' && otherF.ideology === 'Pacifist') ideologyBias *= 1.5;
+        if (faction.relations.get(other.faction)?.enemy && Math.random() < conflictChance * ideologyBias){
+          t.energy -= 5; other.energy -= 5; // Reduced from 10
+          // Decrease trust
+          const rel = faction.relations.get(other.faction);
+          if (rel) rel.trust = Math.max(0, rel.trust - 5);
+          const otherRel = otherF.relations.get(t.faction);
+          if (otherRel) otherRel.trust = Math.max(0, otherRel.trust - 5);
+          // Check thresholds
+          if (rel.trust > 80) { rel.ally = true; rel.enemy = false; pushEvent('diplo', `${faction.name} allies with ${otherF.name}!`); }
+          if (rel.trust < 20) { rel.enemy = true; rel.ally = false; pushEvent('diplo', `${faction.name} at war with ${otherF.name}!`); }
+          // Particle effect for conflict
+          for(let j=0;j<8;j++){
+            particles.push({
+              x: t.x, y: t.y,
+              vx: Math.random()*3-1.5,
+              vy: Math.random()*3-1.5,
+              life: 20,
+              color: '#ff4444',
+              size: 2
+            });
+          }
+          pushEvent('conflict', `${t.name} fought ${other.name}!`);
+        } else if (faction.relations.get(other.faction)?.ally && Math.random() < 0.005) {
+          // Ally trade
+          t.mats += 0.5; other.tech += 0.5;
+          const rel = faction.relations.get(other.faction);
+          if (rel) rel.trust += 1;
+        }
+      }
+    }
+
+    if(t.energy <= 0){ pushEvent('death', `${t.name} has passed away.`); t.dead=true; }
+    if(t.glowTimer>0) t.glowTimer--;
+  }
+
+  npcs = npcs.filter(t=>!t.dead);
+  // Prevent starting factions from dying off completely
+  const startingFactionIds = ['F1', 'F2', 'F3', 'F4'];
+  startingFactionIds.forEach(fid => {
+    const f = factions.find(ff => ff.id === fid);
+    if (!f) return;
+    const members = npcs.filter(t => t.faction === fid && !t.dead).length;
+    if (members === 0) {
+      // Revive: spawn 5-10 NPCs
+      for(let i=0; i< Math.floor(Math.random()*6)+5; i++) {
+        const newT = createNPC(null, fid);
+        newT.x = Math.random() * gridWidth;
+        newT.y = Math.random() * gridHeight;
+        // Place near existing buildings if any
+        const factionB = buildings.filter(b => b.faction === fid);
+        if (factionB.length > 0) {
+          const b = factionB[Math.floor(Math.random()*factionB.length)];
+          newT.x = b.x + Math.random()*100 -50;
+          newT.y = b.y + Math.random()*100 -50;
+        }
+        pushEvent('revive', `${newT.name} revived ${f.name}!`);
+      }
+      majorEvents.unshift(`Gen ${generation}: 🔄 ${f.name} Revived from extinction!`);
+    }
+  });
+  buildings.forEach(b=>{ b.timer++; if(Math.random()<0.00005) { b.dead=true; pushEvent('decay', `A ${b.type} decayed.`); } });
+  buildings = buildings.filter(b=>!b.dead);
+  if(Math.random() < Math.min(0.6, 0.15 + npcs.length/5000) && resources.length < 10000){
+    if(buildings.length>0 && Math.random()<0.6){
+      const b = buildings[Math.floor(Math.random()*buildings.length)];
+      spawnResource(null, b.x + Math.random()*40-20, b.y + Math.random()*40-20);
+    } else spawnResource();
+  }
+  resources = resources.filter(r=>r.amount>0);
+  seeding = false; // end seeding — block further colony creation
+prevPop = npcs.length;
+
+  if(generation % 3500 === 0 && generation>0){
+    if(Math.random()<0.22){
+      const wx = Math.random()*gridWidth, wy = Math.random()*gridHeight;
+      if (Math.random() < 0.3) { // Lost Civilizations
+        createBuilding('ruins', wx, wy, {name: 'Lost Ruins', ancientTech: true}, null);
+        majorEvents.unshift(`Gen ${generation}: 🏛️ Lost Civilization Ruins discovered at (${Math.floor(wx)},${Math.floor(wy)})!`);
+        pushEvent('ruins', `Ancient ruins appeared—unlocking forgotten tech!`);
+        // Spawn hybrid NPC
+        const hybrid = createNPC(null, null);
+        hybrid.trait = 'Hybrid';
+        hybrid.x = wx; hybrid.y = wy;
+        hybrid.faction = factions[Math.floor(Math.random()*factions.length)].id;
+        pushEvent('hybrid', `Hybrid guardian awakened from ruins!`);
+      } else {
+        createBuilding('wonder',wx,wy,{name:'Ancient Ruins'}, null);
+        majorEvents.unshift(`Gen ${generation}: ✨ Ancient Ruins discovered at (${Math.floor(wx)},${Math.floor(wy)})!`);
+        pushEvent('wonder', `A wonder appeared near (${Math.floor(wx)},${Math.floor(wy)})`);
+      }
+      cameraShake = 8; shakeTimer = 40; // Camera shake for wonder
+    } else {
+      if(Math.random()<0.5){
+        const nonDundies = npcs.filter(t => t.faction !== 'F1');
+        const loss = Math.min(nonDundies.length, Math.floor(npcs.length*0.08)); // Reduced from 0.12, skip Dundies
+        let totalLoss = 0;
+        for(let i=0;i<loss;i++){
+          const idx = Math.floor(Math.random()*nonDundies.length);
+          const victim = nonDundies[idx];
+          if(victim) {
+            victim.dead=true;
+            totalLoss++;
+          }
+        }
+        npcs = npcs.filter(t=>!t.dead);
+        majorEvents.unshift(`Gen ${generation}: *** BLACKHOLE DISASTER — ${totalLoss} lost ***`);
+        cameraShake = 10; shakeTimer = 50; // Camera shake for calamity
+      } else {
+        npcs.forEach(t=>{
+          if(Math.random()< 0.15){ t.mats+=5; t.tech+=2; }
+        });
+        majorEvents.unshift(`Gen ${generation}: UFO VISIT — tech & mats gifted!`);
+        cameraShake = 5; shakeTimer = 30;
+      }
+    }
+    if(majorEvents.length>10) majorEvents.pop();
+    document.getElementById('major-events').innerHTML = majorEvents.join('<br>');
+  }
+
+  if(Math.random() < 0.0007 || factions.length < 1){
+    const fname = ['Astra','Helion','Nyx','Orbis','Lumen','Kav','Dund','Vera'][Math.floor(Math.random()*8)] + '-' + (Math.random()*100|0);
+    let color;
+    do {
+      color = (Math.random()*0xffffff|0).toString(16).padStart(6,'0');
+    } while (factions.some(f => f.color === color) || forbiddenHex.has(color));
+    const f = newFaction(fname, color);
+    for(let i=0;i<Math.min(6, npcs.length); i++){
+      const t = npcs[Math.floor(Math.random()*npcs.length)];
+      if(t) t.faction = f.id;
+    }
+    // Assign leader to new faction
+    const newFactionNPCs = npcs.filter(n => n.faction === f.id);
+    if (newFactionNPCs.length > 0) {
+      const leader = newFactionNPCs[Math.floor(Math.random() * newFactionNPCs.length)];
+      f.leader = leader.id;
+      leader.saga += " Founded as leader. ";
+    }
+    pushEvent('faction', `A new faction ${fname} has emerged!`);
+  }
+
+  factions.forEach(f=>f.members = npcs.filter(t=>t.faction===f.id).length);
+  updateUI();
+  updateTier();
+  generation%100===0 && flushEventQueue();
+}
+
+/* ---------- rendering ---------- */
+function worldToScreen(x,y){
+  const shakeX = shakeTimer > 0 ? (Math.random() - 0.5) * cameraShake : 0;
+  const shakeY = shakeTimer > 0 ? (Math.random() - 0.5) * cameraShake : 0;
+  const left = cameraX - canvas.width/(2*zoom) + shakeX;
+  const top = cameraY - canvas.height/(2*zoom) + shakeY;
+  return { sx: Math.round((x - left)*zoom), sy: Math.round((y - top)*zoom) };
+}
+
+function render(){
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const starCount = 160;
+  ctx.fillStyle = '#001b1b';
+  for(let s=0;s<starCount;s++){
+    const sx = (s*37 + generation*0.02) % canvas.width;
+    const sy = (s*97 + (s%5)*3) % canvas.height;
+    ctx.fillRect(sx, sy, 1, 1);
+  }
+
+  const left = cameraX - canvas.width/(2*zoom);
+  const top = cameraY - canvas.height/(2*zoom);
+  const viewW = canvas.width/zoom, viewH = canvas.height/zoom;
+  const viewRange = Math.max(viewW, viewH)/2 + 120;
+
+  // Faction territory overlay
+  if(showFactionColors){
+    factions.forEach(f => {
+      const factionBuildings = buildings.filter(b => b.faction === f.id);
+      factionBuildings.forEach(b => {
+        const {sx, sy} = worldToScreen(b.x, b.y);
+        ctx.fillStyle = `rgba(${parseInt(f.color.slice(0,2),16)},${parseInt(f.color.slice(2,4),16)},${parseInt(f.color.slice(4,6),16)},0.1)`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 50*zoom, 0, Math.PI*2);
+        ctx.fill();
+      });
+    });
+  }
+
+  // Alien Fleet Draw
+  if(alienEvent) {
+    const {sx, sy} = worldToScreen(cameraX + Math.sin(generation * 0.1) * 100, cameraY + Math.cos(generation * 0.05) * 100);
+    ctx.fillStyle = '#0ff';
+    for(let i=0; i<3; i++) {
+      ctx.beginPath();
+      ctx.arc(sx + i*10 - 10, sy, 5, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // Draw particles
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    const {sx, sy} = worldToScreen(p.x, p.y);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(sx, sy, p.size, p.size);
+    p.x += p.vx; p.y += p.vy;
+    p.life--;
+  });
+
+  const nearbyResBuckets = getNearbyFromBuckets(resourceBuckets, cameraX, cameraY, viewRange);
+  const sampleRate = 1;
+  for(let i=0;i<nearbyResBuckets.length;i+=sampleRate){
+    const r = nearbyResBuckets[i];
+    if(r.x < left || r.x > left+viewW || r.y < top || r.y > top+viewH) continue;
+    const {sx,sy} = worldToScreen(r.x, r.y);
+    const map = {energy:'#ffff66', mats:'#ff88ff', rare:'#66ffff', culture:'#ff66aa', tech:'#66ff66', exotic:'#ff88cc', artifact:'#ffef66', gold:'#ffd700', gem:'#48d1cc', diamond:'#b9f2ff', void_essence:'#800080', relic:'#ff00ff'};
+    ctx.fillStyle = map[r.type] || '#ddd';
+    const size = 2 + Math.min(3, Math.floor(r.amount/8));
+    ctx.fillRect(sx, sy, size, size);
+  }
+
+  const nearbyB = getNearbyFromBuckets(buildingBuckets, cameraX, cameraY, viewRange);
+  for(const b of nearbyB){
+    if(b.x < left || b.x > left+viewW || b.y < top || b.y > top+viewH) continue;
+    const {sx,sy} = worldToScreen(b.x, b.y);
+    const palette = {farm:'#00ff00', mine:'#888', temple:'#ffcc00', fortress:'#ff4444', market:'#00ccff', factory:'#a0a0a0', portal:'#4477ff', wonder:'#ff88ff', dyson:'#ff0', warp:'#f0f', observatory:'#00ffff', hive:'#ff00ff', relic_forge:'#8b0000', ecology_lab:'#228b22', ruins:'#996633', black_market_hub:'#4b0082'};
+    ctx.fillStyle = palette[b.type] || '#aaa';
+    if(b.type==='farm') ctx.fillRect(sx-4, sy-4, 9,9);
+    else if(b.type==='mine') { ctx.beginPath(); ctx.arc(sx,sy,5,0,Math.PI*2); ctx.fill(); }
+    else if(b.type==='temple'){ ctx.fillRect(sx-5,sy-5,11,11); ctx.fillStyle='#fff'; ctx.fillRect(sx-1,sy-6,3,3); }
+    else if(b.type==='fortress'){ ctx.fillRect(sx-6,sy-6,13,13); ctx.fillStyle='#000'; ctx.fillRect(sx-2,sy-2,5,5); }
+    else if(b.type==='market'){ ctx.fillRect(sx-7, sy-3, 14,6); ctx.fillStyle='#ffd700'; ctx.fillRect(sx-1, sy-1,2,2); }
+    else if(b.type==='factory'){ ctx.fillRect(sx-6,sy-6,12,12); ctx.fillStyle='#ff0'; ctx.fillRect(sx+3,sy-5,3,3); }
+    else if(b.type==='portal'){ ctx.beginPath(); ctx.arc(sx,sy,6,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#fff'; ctx.stroke(); }
+    else if(b.type==='wonder'){ ctx.fillRect(sx-8,sy-8,16,16); ctx.fillStyle='#fff'; ctx.fillRect(sx-2,sy-10,4,4); }
+    else if(b.type==='dyson') { ctx.fillStyle='#ff0'; ctx.fillRect(sx-10,sy-10,20,20); /* add rings */ ctx.strokeStyle='#ff0'; ctx.lineWidth=1; for(let r=5; r<15; r+=3) { ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.stroke(); } }
+    else if(b.type==='warp') { ctx.fillStyle='#f0f'; ctx.beginPath(); ctx.arc(sx,sy,10,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke(); }
+    else if(b.type==='observatory') { ctx.fillRect(sx-5,sy-5,10,10); ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(sx,sy+3,3,0,Math.PI*2); ctx.fill(); }
+    else if(b.type==='hive') { ctx.fillStyle='#ff00ff'; ctx.beginPath(); ctx.arc(sx,sy,6,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; for(let k=0;k<4;k++) ctx.fillRect(sx-4+ k*2, sy-2,1,1); }
+    else if(b.type==='relic_forge') { ctx.fillStyle='#8b0000'; ctx.fillRect(sx-5,sy-5,10,10); ctx.fillStyle='#ffd700'; ctx.fillRect(sx,sy,2,2); }
+    else if(b.type==='ecology_lab') { ctx.fillStyle='#228b22'; ctx.fillRect(sx-4,sy-4,8,8); ctx.fillStyle='#00ff00'; ctx.beginPath(); ctx.arc(sx,sy,3,0,Math.PI*2); ctx.fill(); }
+    else if(b.type==='ruins') { ctx.fillStyle = '#996633'; ctx.fillRect(sx-6, sy-6, 12, 12); ctx.fillStyle = '#fff'; ctx.fillRect(sx-2, sy-2, 4, 4); } // Lost Civilizations
+    else if(b.type==='black_market_hub') { ctx.fillStyle = '#4b0082'; ctx.fillRect(sx-5, sy-5, 10, 10); ctx.fillStyle = '#ffd700'; ctx.fillRect(sx, sy+2, 2, 2); } // Black Market
+  }
+
+  const nearbyT = getNearbyFromBuckets(npcBuckets, cameraX, cameraY, viewRange);
+  const throngSampleRate = 1;
+  for(let i=0;i<nearbyT.length;i+=throngSampleRate){
+    const t = nearbyT[i];
+    if(t.x < left || t.x > left+viewW || t.y < top || t.y > top+viewH) continue;
+    const {sx,sy} = worldToScreen(t.x, t.y);
+    const f = factions.find(ff => ff.id === t.faction);
+    const baseColor = f ? `#${f.color}` : '#ff0000';
+    if(t.legend){
+      ctx.fillStyle = '#fff'; ctx.fillRect(sx-2, sy-2, 8,8);
+      ctx.fillStyle = baseColor; ctx.fillRect(sx-1, sy-1, 6,6);
+    } else {
+      ctx.fillStyle = baseColor; ctx.fillRect(sx, sy, 4,6);
+    }
+    ctx.fillStyle = '#fff'; ctx.fillRect(sx, sy, 2,2); ctx.fillRect(sx+2, sy, 2,2);
+    if(t.trait==='Explorer'){ ctx.fillStyle='#00f'; ctx.fillRect(sx+1, sy+4, 2,2); }
+    if(t.spaceship){ ctx.strokeStyle='#0f0'; ctx.beginPath(); ctx.arc(sx+2, sy+3, 3,0,Math.PI*2); ctx.stroke(); }
+    if(t.glowTimer>0){ ctx.strokeStyle='rgba(255,255,120,0.6)'; ctx.beginPath(); ctx.arc(sx+2, sy+2, 6,0,Math.PI*2); ctx.stroke(); }
+    // Visual indicator for space travel
+    if (t.travelProgress > 0) {
+      ctx.strokeStyle = '#00ffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx + 2, sy + 2, 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Romance indicator
+    if (Array.from(t.relationships.values()).some(r => r.type === 'lover')) {
+      ctx.fillStyle = '#ff69b4';
+      ctx.fillRect(sx + 4, sy - 2, 2, 2);
+    }
+    // Trait level indicator
+    if (t.traitLevel > 1) {
+      ctx.fillStyle = '#ffff00';
+      ctx.fillRect(sx - 2, sy - 4, t.traitLevel, 2);
+    }
+    // Age stage indicator
+    if (t.age > 60) {
+      ctx.fillStyle = '#ccc';
+      ctx.fillRect(sx, sy - 4, 2, 2);
+    }
+  }
+
+  renderMinimap();
+  renderCRT();
+}
+
+/* minimap rendering with fog */
+let miniToggle=true;
+function renderMinimap(){
+  if(!miniToggle) return;
+  miniCtx.fillStyle = 'rgba(0,0,0,0.6)'; miniCtx.fillRect(0,0,mini.width,mini.height);
+  miniCtx.strokeStyle='#888'; miniCtx.strokeRect(0.5,0.5,mini.width-1,mini.height-1);
+  const sx = mini.width / gridWidth;
+  const sy = mini.height / gridHeight;
+  const sampleRate = Math.max(1, Math.floor(resources.length/1200));
+  for(let i=0;i<resources.length;i+=sampleRate){
+    const r = resources[i];
+    miniCtx.fillStyle = '#666';
+    miniCtx.fillRect(r.x*sx, r.y*sy, 1,1);
+  }
+  for(let i=0;i<buildings.length;i+=Math.max(1,(buildings.length/600|0))){
+    const b = buildings[i];
+    const f = factions.find(ff => ff.id === b.faction);
+    if (f && !f.explored.has(bucketKey(b.x, b.y))) continue; // fog
+    miniCtx.fillStyle = f ? `#${f.color}` : '#ffcc00';
+    miniCtx.fillRect(b.x*sx, b.y*sy, 2,2);
+  }
+  for(let i=0;i<npcs.length;i+=Math.max(1,(npcs.length/1000|0))){
+    const t = npcs[i];
+    const f = factions.find(ff=>ff.id===t.faction);
+    if (f && !f.explored.has(bucketKey(t.x, t.y))) continue; // fog
+    miniCtx.fillStyle = f ? `#${f.color}` : '#ff0000';
+    miniCtx.fillRect(t.x*sx, t.y*sy, 2,2);
+  }
+  const left = cameraX - canvas.width/(2*zoom), top = cameraY - canvas.height/(2*zoom);
+  const viewW = canvas.width/zoom, viewH = canvas.height/zoom;
+  miniCtx.strokeStyle = '#fff'; miniCtx.lineWidth=1;
+  miniCtx.strokeRect(left*sx, top*sy, viewW*sx, viewH*sy);
+}
+
+/* CRT overlay drawing */
+function renderCRT(){
+  crtCtx.clearRect(0,0,crt.width,crt.height);
+  crtCtx.fillStyle = 'rgba(0,0,0,0.12)';
+  crtCtx.fillRect(0,0,crt.width,crt.height);
+  crtCtx.fillStyle = 'rgba(0,0,0,0.03)';
+  for(let y=0;y<crt.height;y+=3){
+    crtCtx.fillRect(0,y,crt.width,1);
+  }
+  crtCtx.strokeStyle = 'rgba(255,255,255,0.02)';
+  crtCtx.strokeRect(1,1,crt.width-2,crt.height-2);
+}
+
+/* ---------- UI / DOM updates ---------- */
+function updateUI(){
+  document.getElementById('gen').textContent = generation;
+  document.getElementById('pop').textContent = npcs.length;
+  document.getElementById('growth').textContent = popGrowth >= 0 ? (popGrowth === 0 ? '0' : `+${popGrowth}`) : popGrowth;
+  document.getElementById('economy').textContent = economyIndex.toFixed(2);
+
+  const buildingCounts = buildings.reduce((acc, b) => { acc[b.type] = (acc[b.type] || 0) + 1; return acc; }, {});
+  const buildingsBox = document.getElementById('buildings-list');
+  buildingsBox.innerHTML = '';
+  Object.keys(buildingCounts).sort().forEach(type => {
+    const div = document.createElement('div');
+    div.className = 'statbox';
+    div.innerHTML = `<span style="text-transform:capitalize">${type}</span>: <span class="stat">${buildingCounts[type]}</span>`;
+    buildingsBox.appendChild(div);
+  });
+
+  const box = document.getElementById('colonies-list');
+  box.innerHTML = '';
+  factions.forEach(f=>{
+    const div = document.createElement('div');
+    div.className = 'statbox';
+    const factionNpcs = npcs.filter(t => t.faction === f.id);
+    const factionPop = factionNpcs.length;
+    const factionBuildings = buildings.filter(b => b.faction === f.id).reduce((acc, b) => { acc[b.type] = (acc[b.type] || 0) + 1; return acc; }, {});
+    let buildingsSummary = '';
+    Object.keys(factionBuildings).sort().forEach(type => {
+      buildingsSummary += `${type}:${factionBuildings[type]} `;
+    });
+    const totalBuildings = buildings.filter(b => b.faction === f.id).length;
+    let enemyNames = [];
+    factions.forEach(otherF => {
+      if(otherF.id !== f.id && f.relations.get(otherF.id)?.enemy) enemyNames.push(otherF.name);
+    });
+    const leaderName = f.leader ? npcs.find(t => t.id === f.leader)?.name || 'Unknown' : 'None';
+    div.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><span style="display:inline-block;width:12px;height:12px;background:#${f.color};margin-right:6px;border:1px solid #000"></span><strong>${f.name}</strong> (${f.ideology} / ${f.government})</div>
+        <div class="muted">${factionPop}</div>
+      </div>
+      <div style="font-size:12px;margin-top:6px">
+        Leader: <span class="stat">${leaderName}</span>
+      </div>
+      <div style="font-size:12px;margin-top:6px">
+        Population: <span class="stat">${factionPop}</span>
+      </div>
+      <div style="font-size:12px;margin-top:6px">
+        Economy: <span class="stat">${f.economyIndex.toFixed(2)}</span>
+      </div>
+      <div style="font-size:12px;margin-top:6px">
+        Buildings: <span class="stat">${totalBuildings}</span> ${buildingsSummary ? `(${buildingsSummary.trim()})` : ''}
+      </div>
+      <div style="font-size:12px;margin-top:6px">
+        Trade Routes: <span class="stat">${f.tradeRoutes.length}</span>
+      </div>
+      <div style="font-size:12px;margin-top:6px">
+        Sanctions: <span class="stat">${f.sanctions.size}</span>
+      </div>
+      <div style="font-size:12px;margin-top:6px">
+        Enemies: <span class="stat">${enemyNames.join(', ') || 'None'}</span>
+      </div>`;
+    box.appendChild(div);
+  });
+
+  // Trade Networks UI
+  const tradeBox = document.getElementById('trade-list');
+  tradeBox.innerHTML = '';
+  factions.forEach(f => {
+    if (f.tradeRoutes.length === 0) return;
+    const div = document.createElement('div');
+    div.className = 'statbox';
+    let routesList = `<strong>${f.name} Routes</strong><br>`;
+    f.tradeRoutes.forEach(route => {
+      const dist = Math.hypot(route.fromMarket.x - route.toMarket.x, route.fromMarket.y - route.toMarket.y).toFixed(0);
+      routesList += `Route (${dist} units): ${route.activeTraders.length} traders<br>`;
+    });
+    div.innerHTML = routesList;
+    tradeBox.appendChild(div);
+  });
+
+  // Diplomacy UI
+  const diploBox = document.getElementById('diplomacy-list');
+  diploBox.innerHTML = '';
+  factions.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'statbox';
+    let relSummary = '';
+    const relations = [];
+    factions.forEach(otherF => {
+      if (otherF.id !== f.id) {
+        const rel = f.relations.get(otherF.id);
+        if (rel) {
+          relations.push({otherF, rel});
+        }
+      }
+    });
+    // Sort by trust descending for better readability
+    relations.sort((a, b) => b.rel.trust - a.rel.trust);
+    relations.forEach(({otherF, rel}) => {
+      const status = rel.ally ? 'Ally' : rel.enemy ? 'Enemy' : 'Neutral';
+      const statusClass = rel.ally ? 'ally' : rel.enemy ? 'enemy' : 'neutral';
+      const bar = '█'.repeat(Math.floor(rel.trust / 10));
+      relSummary += `<div style="margin:2px 0;"><span class="dot" style="background:#${otherF.color};margin-right:4px;"></span><span class="${statusClass}">${status}</span> with ${otherF.name} (${otherF.ideology}): [${bar}] <span class="stat">${rel.trust}</span></div>`;
+    });
+    div.innerHTML = `<strong>${f.name} (${f.ideology} / ${f.government}) Relations</strong><div style="margin-top:4px;font-size:11px;">${relSummary}</div>`;
+    diploBox.appendChild(div);
+  });
+
+  // Research UI with branches
+  const researchBox = document.getElementById('research-list');
+  researchBox.innerHTML = '';
+  factions.forEach(f => {
+    const div = document.createElement('div');
+    div.className = 'statbox';
+    let resList = `<strong>${f.name} (${f.ideology})</strong><br>`;
+    ['military', 'cultural', 'industrial'].forEach(branch => {
+      resList += `<em>${branch}:</em><br>`;
+      f.research[branch].forEach(res => {
+        const progBar = '█'.repeat(Math.floor((res.progress / res.cost) * 10));
+        resList += `  ${res.name}: [${progBar}] ${Math.floor(res.progress)}/${res.cost} ${res.unlocked ? '(Unlocked)' : ''}<br>`;
+      });
+    });
+    div.innerHTML = resList;
+    researchBox.appendChild(div);
+  });
+
+  const legend = document.getElementById('legendBox');
+  legend.innerHTML = '';
+  const keys = [
+    ['Farm','#00ff00'],['Mine','#888'],['Temple','#ffcc00'],['Fortress','#ff4444'],
+    ['Market','#00ccff'],['Factory','#a0a0a0'],['Portal','#4477ff'],['Wonder','#ff88ff'],['Dyson','#ff0'],['Warp','#f0f'],
+    ['Observatory','#00ffff'],['Hive','#ff00ff'],['Relic Forge','#8b0000'],['Ecology Lab','#228b22'],['Ruins','#996633'],['Black Market','#4b0082']
+  ];
+  keys.forEach(k=>{
+    const el = document.createElement('div'); el.className='item'; el.innerHTML=`<span class="dot" style="background:${k[1]};"></span>${k[0]}`; legend.appendChild(el);
+  });
+}
+
+/* center camera on a faction (first member) */
+function centerOnFaction(fid){
+  const factionNpcs = npcs.filter(t => t.faction === fid);
+  let avgX, avgY;
+  if (factionNpcs.length > 0) {
+    avgX = factionNpcs.reduce((sum, t) => sum + t.x, 0) / factionNpcs.length;
+    avgY = factionNpcs.reduce((sum, t) => sum + t.y, 0) / factionNpcs.length;
+    zoom = 3;
+  } else {
+    const factionBuildings = buildings.filter(b => b.faction === fid);
+    if (factionBuildings.length === 0) return;
+    avgX = factionBuildings.reduce((sum, b) => sum + b.x, 0) / factionBuildings.length;
+    avgY = factionBuildings.reduce((sum, b) => sum + b.y, 0) / factionBuildings.length;
+    zoom = 2;
+  }
+  cameraX = avgX;
+  cameraY = avgY;
+  clampCam();
+}
+
+/* ---------- save/load game ---------- */
+function saveGame() {
+  const state = {
+    version: 1,
+    generation,
+    showFactionColors,
+    cameraX,
+    cameraY,
+    zoom,
+    terraformCount,
+    economyIndex,
+    npcs: npcs.map(t => ({ 
+      ...t, 
+      relationships: Object.fromEntries(t.relationships.entries()) 
+    })),
+    resources: resources.map(r => ({ ...r })),
+    buildings: buildings.map(b => ({ ...b, meta: { ...b.meta } })),
+    factions: factions.map(f => ({
+      ...f,
+      relations: Object.fromEntries(f.relations.entries()),
+      explored: Array.from(f.explored),
+      research: f.research, // Object with branches
+      tradeRoutes: f.tradeRoutes.map(route => ({...route, fromMarket: {...route.fromMarket, meta: {...route.fromMarket.meta}}, toMarket: {...route.toMarket, meta: {...route.toMarket.meta}}})),
+      sanctions: Array.from(f.sanctions)
+    })),
+    majorEvents: [...majorEvents],
+    groupedEvents: [...groupedEvents],
+    eventQueue: [...eventQueue],
+    alienEvent: alienEvent ? {...alienEvent} : null,
+    biomesMap: Array.from(biomesMap.entries())
+  };
+  localStorage.setItem('voidborn_save', JSON.stringify(state));
+  pushEvent('god', 'Game saved.');
+  alert('Game saved!');
+}
+
+function loadGame() {
+  const saved = localStorage.getItem('voidborn_save');
+  if (!saved) {
+    alert('No saved game found!');
+    return;
+  }
+  const state = JSON.parse(saved);
+  if (state.version !== 1) {
+    alert('Save version mismatch!');
+    return;
+  }
+  generation = state.generation;
+  showFactionColors = state.showFactionColors || false;
+  cameraX = state.cameraX;
+  cameraY = state.cameraY;
+  zoom = state.zoom;
+  terraformCount = state.terraformCount || 0;
+  economyIndex = state.economyIndex || 1.0;
+  npcs = state.npcs.map(t => ({
+    ...t,
+    relationships: new Map(Object.entries(t.relationships))
+  }));
+  resources = state.resources;
+  buildings = state.buildings;
+  biomesMap.clear();
+  state.biomesMap.forEach(([k, v]) => biomesMap.set(k, v));
+  factions = state.factions.map(f => {
+    const relMap = new Map(Object.entries(f.relations));
+    const expSet = new Set(f.explored);
+    const sanSet = new Set(f.sanctions);
+    f.tradeRoutes.forEach(route => {
+      route.fromMarket = buildings.find(b => b.id === route.fromMarket.id);
+      route.toMarket = buildings.find(b => b.id === route.toMarket.id);
+    });
+    return { ...f, relations: relMap, explored: expSet, research: f.research, sanctions: sanSet };
+  });
+  majorEvents = state.majorEvents;
+  groupedEvents = state.groupedEvents;
+  eventQueue = state.eventQueue || [];
+  alienEvent = state.alienEvent;
+  rebuildBuckets();
+  updateUI();
+  document.getElementById('major-events').innerHTML = majorEvents.join('<br>');
+  document.getElementById('event-log').innerHTML = groupedEvents.join('<br>');
+  pushEvent('god', 'Game loaded.');
+  alert('Game loaded!');
+}
+
+/* UI buttons */
+document.getElementById('toggle-faction-colors').addEventListener('click',()=>{
+  showFactionColors = !showFactionColors;
+  miniToggle = showFactionColors;
+});
+
+let paused=false;
+let lastTime = performance.now();
+document.getElementById('pause-sim').addEventListener('click',()=>{
+  paused = !paused; document.getElementById('pause-sim').textContent = paused ? 'Resume' : 'Pause';
+});
+
+document.getElementById('clear-log').addEventListener('click',()=>{ groupedEvents.length=0; document.getElementById('event-log').innerHTML=''; });
+
+document.getElementById('save-game').addEventListener('click', saveGame);
+document.getElementById('load-game').addEventListener('click', loadGame);
+
+document.getElementById('livestream-btn').addEventListener('click', () => {
+  window.open('https://pump.fun/coin/F32iSjUL7fT2ZjCRYpjwuLjLE3SCuNVWzxu8xtgPpump', '_blank', 'width=800,height=600');
+});
+
+document.getElementById('contract-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText('F32iSjUL7fT2ZjCRYpjwuLjLE3SCuNVWzxu8xtgPpump').then(() => {
+    alert('Copied to clipboard!');
+  });
+});
+
+/* ---------- main loop ---------- */
+function frame(now){
+  const dt = now - lastTime;
+  lastTime = now;
+  if(!paused){
+    update();
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* initial UI update & buckets built */
+rebuildBuckets();
+updateUI();
+document.getElementById('major-events').innerHTML = majorEvents.join('<br>');
+
+</script>
+
+<!-- ====== BEGIN: Contract Address Soft Hide (Livestream-only, non-destructive) ====== -->
+<style>
+  .hide-contract-address, [data-hide-contract-address="1"] { display: none !important; }
+</style>
+<script>
+(function softHideContractAddress(){
+  function hide(){
+    const headers = Array.from(document.querySelectorAll('div, h1, h2, h3, h4, summary'))
+      .filter(el => /livestream/i.test(el.textContent||''));
+    const containers = [];
+    headers.forEach(h => {
+      const box = h.closest('.statbox') || h.parentElement;
+      if (box && !containers.includes(box)) containers.push(box);
+      if (h.nextElementSibling && !containers.includes(h.nextElementSibling)) containers.push(h.nextElementSibling);
+    });
+
+    function hideIn(root){
+      if (!root || !root.querySelectorAll) return 0;
+      let n=0;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      const toHide = [];
+      while (walker.nextNode()){
+        const t = walker.currentNode;
+        if (/^\s*contract\s*address\s*:|\bcontract\s*address\b/i.test(t.nodeValue||'')){
+          const el = t.parentElement;
+          if (el){ toHide.push(el); }
+        }
+      }
+      toHide.forEach(el => { el.setAttribute('data-hide-contract-address','1'); el.style.display='none'; n++; });
+      return n;
+    }
+
+    let removed = 0;
+    containers.forEach(c => removed += hideIn(c));
+
+    if (removed === 0){
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+      const toHide = [];
+      while (walker.nextNode()){
+        const t = walker.currentNode;
+        const txt = (t.nodeValue||'');
+        if (/^\s*contract\s*address\s*:/i.test(txt)){
+          const par = t.parentElement;
+          if (par && !par.closest('table')) toHide.push(par);
+        }
+      }
+      toHide.forEach(el => { el.setAttribute('data-hide-contract-address','1'); el.style.display='none'; });
+    }
+  }
+  hide();
+  const mo = new MutationObserver(()=>hide());
+  mo.observe(document.body, { childList:true, subtree:true });
+})();
+</script>
+<!-- ====== END: Contract Address Soft Hide ====== -->
+
+<!-- ====== BEGIN: Social Expansion Patch — Megaprojects + Diaspora + Constellations ====== -->
+<script>
+if (!window.__VB_SOCIAL_EXPANSION__) (function(){
+  window.__VB_SOCIAL_EXPANSION__ = true;
+
+  (function ready(){
+    if (typeof window.update==='function' && Array.isArray(window.factions) && Array.isArray(window.npcs) && Array.isArray(window.buildings) && Array.isArray(window.majorEvents)){
+      initSocialExpansion();
+    } else setTimeout(ready, 60);
+  })();
+
+  function initSocialExpansion(){
+    const _prevUpdate = window.update;
+    const _push = window.pushEvent || function(){};
+    const $ = (id)=>document.getElementById(id);
+    const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+    const pick=(arr)=>arr[Math.floor(Math.random()*arr.length)];
+
+    function ensureSubpanel(containerId, subId, title){
+      const host = $(containerId); if(!host) return null;
+      let sub = document.getElementById(subId);
+      if(!sub){
+        sub = document.createElement('div');
+        sub.id = subId;
+        sub.innerHTML = `<div class="statbox"><b>${title}</b><div id="${subId}-content" style="font-size:12px;margin-top:4px"></div></div>`;
+        host.parentElement?.insertBefore(sub, host.nextSibling);
+      }
+      return document.getElementById(subId+'-content');
+    }
+    function setHTML(id, html){
+      if (window.VBUI && VBUI.set) VBUI.set(id, html);
+      else { const el=document.getElementById(id); if(el) el.innerHTML = html; }
+    }
+
+    function ensureWallet(f){ if(!f.wallet) f.wallet={G:2,A:2,B:2}; }
+
+    /* =========================================================
+       1) COOPERATIVE MEGAPROJECTS
+       - Auto-propose projects when ≥2 allied factions exist.
+       - Draw tiny donations from signatories' G/A/B wallets each tick.
+       - On completion: Harmony bump + small standards adoption + event.
+    ========================================================= */
+    const MEGA = {
+      uiId:'vb-mega',
+      projects: [], // {id,name,signatories[],req:{G,A,B},have:{G,A,B},progress,target,started}
+      kinds: [
+        {name:'Orbital Garden',  req:{G:70,A:60,B:40}, badge:'greenLog'},
+        {name:'Open-Data Ring',  req:{G:40,A:30,B:80}, badge:'openStats'},
+        {name:'Pan-University',  req:{G:30,A:60,B:90}, badge:'eduCreds'}
+      ],
+      proposeEvery: 300
+    };
+    function alliedPairs(){
+      const out=[];
+      for(const a of window.factions){
+        for(const b of window.factions){
+          if(!a || !b || a.id>=b.id) continue;
+          const r = a.relations?.get(b.id);
+          if (r && (r.trust||0) > 60) out.push([a,b]);
+        }
+      }
+      return out;
+    }
+    function proposeMegaproject(){
+      const pairs = alliedPairs(); if(!pairs.length) return;
+      const kind = pick(MEGA.kinds);
+      const [a,b] = pick(pairs);
+      const id = 'MPJ'+Math.random().toString(36).slice(2,7).toUpperCase();
+      const proj = { id, name: kind.name, signatories:[a.id,b.id], req:{...kind.req}, have:{G:0,A:0,B:0}, progress:0, target: kind.req.G+kind.req.A+kind.req.B, badge:kind.badge, started: window.generation||0 };
+      MEGA.projects.push(proj);
+      _push('megaproject', `${a.name} + ${b.name} launched ${proj.name}`);
+      window.majorEvents.unshift(`Gen ${window.generation}: 🏗️ Megaproject launched — ${proj.name} (${a.name} & ${b.name})`);
+    }
+    function stepMegaprojects(){
+      // periodically seed if none or stale
+      if ((window.generation||0) % MEGA.proposeEvery === 0 && MEGA.projects.length < 3) proposeMegaproject();
+
+      for(const p of MEGA.projects){
+        if (p.done) continue;
+        // gather donations
+        for(const fid of p.signatories){
+          const f = window.factions.find(x=>x.id===fid); if(!f) continue;
+          ensureWallet(f);
+          // small per-tick siphon if available
+          const g = Math.min(0.3, Math.max(0, (f.wallet.G||0)-5) * 0.03);
+          const a = Math.min(0.3, Math.max(0, (f.wallet.A||0)-5) * 0.03);
+          const b = Math.min(0.3, Math.max(0, (f.wallet.B||0)-5) * 0.03);
+          if(p.have.G < p.req.G && g>0){ f.wallet.G -= g; p.have.G += g; }
+          if(p.have.A < p.req.A && a>0){ f.wallet.A -= a; p.have.A += a; }
+          if(p.have.B < p.req.B && b>0){ f.wallet.B -= b; p.have.B += b; }
+        }
+        const total = Math.min(p.req.G, p.have.G) + Math.min(p.req.A, p.have.A) + Math.min(p.req.B, p.have.B);
+        p.progress = total;
+        if (p.progress >= p.target && !p.done){
+          p.done = true;
+          // benefits
+          for(const fid of p.signatories){
+            const f = window.factions.find(x=>x.id===fid); if(!f) continue;
+            f.harmonyIndex = Math.min(1, (f.harmonyIndex||0.5) + 0.08);
+            // standards bump
+            f.standards = f.standards || {portV2:false,eduCreds:false,museumAPI:false,greenLog:false,openStats:false};
+            f.standards[p.badge] = true;
+            f.standardScore = (f.standardScore||0) + 1;
+          }
+          _push('megaproject-complete', `${p.name} complete`);
+          window.majorEvents.unshift(`Gen ${window.generation}: 🌈 Megaproject completed — ${p.name}`);
+        }
+      }
+    }
+    function renderMegaprojects(){
+      const tgt = ensureSubpanel('trade-list', MEGA.uiId, 'Cooperative Megaprojects');
+      if(!tgt) return;
+      const rows = MEGA.projects.slice(-5).map(p=>{
+        const pct = Math.min(100, Math.round(100 * p.progress / p.target));
+        const sigs = p.signatories.map(id=>window.factions.find(f=>f.id===id)?.name||id).join(' + ');
+        return `<div><b>${p.name}</b> — ${sigs} — <b>${pct}%</b> (G ${p.have.G.toFixed(1)}/${p.req.G}, A ${p.have.A.toFixed(1)}/${p.req.A}, B ${p.have.B.toFixed(1)}/${p.req.B})</div>`;
+      }).join('') || '<div>No megaprojects yet.</div>';
+      setHTML(MEGA.uiId+'-content', rows);
+    }
+
+    /* =========================================================
+       2) DIASPORA TALENT WAVES
+       - Every N gens, move a small cohort of Scholars/Artists from high-education factions
+         to low-education allies along bridges/economic neighbors.
+       - Boosts harmony & learning on both ends.
+    ========================================================= */
+    const DIASP = { uiId:'vb-diaspora', cadence: 240, movedLast: 0, lastAt: -1, lastLog:'' };
+    function uniCount(fid){ return (window.buildings||[]).filter(b=>b.type==='university' && b.faction===fid).length; }
+    function popCount(fid){ return (window.npcs||[]).filter(n=>!n.dead && n.faction===fid).length; }
+    function candidatePairs(){
+      const fs = window.factions||[];
+      const scored = fs.map(f=>({ f, ratio: (uniCount(f.id)+0.1)/(popCount(f.id)+1) }))
+                       .sort((a,b)=>b.ratio-a.ratio);
+      const donors = scored.slice(0, Math.ceil(scored.length/2));
+      const hosts  = scored.slice(-Math.ceil(scored.length/2));
+      const pairs=[];
+      for(const d of donors){
+        for(const h of hosts){
+          if(d.f.id===h.f.id) continue;
+          const r = d.f.relations?.get(h.f.id);
+          if(r && r.trust>55){ pairs.push([d.f, h.f]); break; }
+        }
+      }
+      return pairs;
+    }
+    function stepDiaspora(){
+      const gen = window.generation||0;
+      if (gen>0 && gen % DIASP.cadence === 0 && DIASP.lastAt !== gen){
+        DIASP.lastAt = gen;
+        const pairs = candidatePairs(); if(!pairs.length) return;
+        const [donor, host] = pick(pairs);
+        // select a few scholars/artists
+        const pool = (window.npcs||[]).filter(n=>!n.dead && n.faction===donor.id && (n.trait==='Scholar' || n.trait==='Artist'));
+        const k = Math.min(8, Math.max(3, Math.floor(pool.length*0.05)));
+        const mkts = (window.buildings||[]).filter(b=>b.type==='market' && b.faction===host.id);
+        let placed=0;
+        for(let i=0;i<k;i++){
+          const n = pick(pool); if(!n) break;
+          n.faction = host.id;
+          const anchor = mkts.length? pick(mkts) : null;
+          if(anchor){ n.x = anchor.x + (Math.random()*20-10); n.y = anchor.y + (Math.random()*20-10); }
+          n.energy = Math.min(100, (n.energy||70)+20);
+          n.learning = (n.learning||0)+1.2;
+          placed++;
+        }
+        if(placed>0){
+          // Harmony/Wallet nudges
+          donor.harmonyIndex = Math.min(1, (donor.harmonyIndex||0.5)+0.02);
+          host.harmonyIndex  = Math.min(1, (host.harmonyIndex ||0.5)+0.05);
+          ensureWallet(host); host.wallet.B += 0.8;
+          ensureWallet(donor); donor.wallet.A += 0.6;
+          DIASP.movedLast = placed;
+          DIASP.lastLog = `${placed} talents from ${donor.name} → ${host.name}`;
+          _push('migration', DIASP.lastLog);
+          window.majorEvents.unshift(`Gen ${gen}: ✈️ Diaspora Talent Wave — ${DIASP.lastLog}`);
+        }
+      }
+    }
+    function renderDiaspora(){
+      const tgt = ensureSubpanel('diplomacy-list', DIASP.uiId, 'Diaspora Talent Waves');
+      if(!tgt) return;
+      const txt = DIASP.lastLog ? `${DIASP.lastLog}` : 'Next wave will move scholars/artists from high-edu to low-edu allies.';
+      setHTML(DIASP.uiId+'-content', `<div>Cadence: every <b>${DIASP.cadence}</b> gens</div><div>Last: <b>${DIASP.movedLast}</b> moved • ${txt}</div>`);
+    }
+
+    /* =========================================================
+       3) CITIZEN-SCIENCE CONSTELLATIONS
+       - Observatories host constellation projects; nearby citizens add samples.
+       - When complete: research event, B mint, local culture lift.
+    ========================================================= */
+    const CONST = { uiId:'vb-constellations', list:[], max:6 };
+    function seedConstellations(){
+      const obs = (window.buildings||[]).filter(b=>b.type==='observatory');
+      if(!obs.length) return;
+      while (CONST.list.length < Math.min(CONST.max, Math.ceil(obs.length*0.6))){
+        const o = pick(obs);
+        CONST.list.push({
+          id:'CNS'+Math.random().toString(36).slice(2,7).toUpperCase(),
+          x:o.x, y:o.y, faction:o.faction, nodes: 3 + Math.floor(Math.random()*4),
+          samples:0, target: 120 + Math.floor(Math.random()*120), theme: pick(['Pulsar Choir','Nebula API','Transit Atlas','Harmony Map'])
+        });
+      }
+    }
+    function stepConstellations(){
+      if (CONST.list.length===0 && (window.generation||0)%200===0) seedConstellations();
+      const r=120;
+      for(const c of CONST.list){
+        const near = (window.getNearbyFromBuckets ? window.getNearbyFromBuckets(window.npcBuckets||new Map(), c.x, c.y, r) : window.npcs)
+                    .filter(n=>!n.dead && Math.hypot(n.x-c.x,n.y-c.y)<r);
+        // each tick a handful contribute
+        for(let i=0;i<Math.min(10, Math.ceil(near.length*0.02)); i++){
+          const n = pick(near); if(!n) break;
+          c.samples += 1 + Math.random()*2;
+          n.learning = (n.learning||0) + 0.05;
+          n.culture = (n.culture||0) + 0.02;
+        }
+        if (c.samples >= c.target && !c.done){
+          c.done = true;
+          const f = window.factions.find(x=>x.id===c.faction);
+          ensureWallet(f); f.wallet.B += 2.5;
+          _push('research', `Constellation complete: ${c.theme}`);
+          window.majorEvents.unshift(`Gen ${window.generation}: ✨ Constellation "${c.theme}" completed`);
+        }
+      }
+    }
+    function renderConstellations(){
+      const tgt = ensureSubpanel('research-list', CONST.uiId, 'Citizen‑Science Constellations');
+      if(!tgt) return;
+      const rows = CONST.list.slice(-6).map(c=>{
+        const pct = Math.min(100, Math.round(100*c.samples/c.target));
+        const fname = window.factions.find(f=>f.id===c.faction)?.name||c.faction;
+        return `<div>${fname}: <b>${c.theme}</b> — <b>${pct}%</b> (${Math.round(c.samples)}/${c.target})</div>`;
+      }).join('') || '<div>No constellations yet.</div>';
+      setHTML(CONST.uiId+'-content', rows);
+    }
+
+    /* =========================================================
+       INTEGRATION
+    ========================================================= */
+    window.update = function(){
+      _prevUpdate();
+      stepMegaprojects(); renderMegaprojects();
+      stepDiaspora();    renderDiaspora();
+      stepConstellations(); renderConstellations();
+    };
+
+    // Legend chip
+    const legend = document.getElementById('legendBox');
+    if(legend){
+      const tag=document.createElement('div'); tag.className='item';
+      tag.innerHTML = `<span class="dot" style="background:#f472b6"></span><span>Megaprojects/Diaspora/Constellations active</span>`;
+      legend.appendChild(tag);
+    }
+  }
+})();
+</script>
+<!-- ====== END: Social Expansion Patch ====== -->
+
+<!-- ====== BEGIN: Alliance & Networking Patch — Embassies, Guilds, Barter, Aid Corridors, Procurement, Sabbaticals, Cabotage, Freeports, Project Shares, Knowledge Escrow, Multi‑Hop ====== -->
+<script>
+if (!window.__VB_ALLIANCE_NET__) (function(){
+  window.__VB_ALLIANCE_NET__ = true;
+
+  (function ready(){
+    if (typeof window.update==='function' && Array.isArray(window.factions) && Array.isArray(window.npcs) && Array.isArray(window.buildings) && Array.isArray(window.majorEvents)){
+      initAllianceNetworking();
+    } else setTimeout(ready, 60);
+  })();
+
+  function initAllianceNetworking(){
+    const _prevUpdate = window.update;
+    const _push = window.pushEvent || function(){};
+    const $ = (id)=>document.getElementById(id);
+    const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+    const pick=(arr)=>arr[Math.floor(Math.random()*arr.length)];
+    function setHTML(id, html){ if(window.VBUI && VBUI.set) VBUI.set(id, html); else { const el=document.getElementById(id); if(el) el.innerHTML=html; } }
+    function ensureSubpanel(containerId, subId, title){
+      const host = $(containerId); if(!host) return null;
+      let sub = document.getElementById(subId);
+      if(!sub){
+        sub = document.createElement('div');
+        sub.id = subId;
+        sub.innerHTML = `<div class="statbox"><b>${title}</b><div id="${subId}-content" style="font-size:12px;margin-top:4px"></div></div>`;
+        host.parentElement?.insertBefore(sub, host.nextSibling);
+      }
+      return document.getElementById(subId+'-content');
+    }
+    function ensureWallet(f){ if(!f.wallet) f.wallet={G:2,A:2,B:2}; }
+
+    /* ===================== 1) EMBASSY NETWORK ===================== */
+    const EMB = { uiId:'vb-embassies', list:[], proposeEvery:260 };
+    function newEmbassy(a,b){
+      // place near a's market
+      const mkts = (window.buildings||[]).filter(x=>x.type==='market' && x.faction===a.id);
+      const m = mkts[0]; if(!m) return;
+      if(typeof window.createBuilding==='function'){
+        window.createBuilding('embassy', m.x+8, m.y+8, {ally:b.id}, a.id);
+      }
+      EMB.list.push({a:a.id, b:b.id, at:(window.generation||0)});
+      _push('embassy', `${a.name} opened an embassy for ${b.name}`);
+      window.majorEvents.unshift(`Gen ${window.generation}: 🏛️ Embassy — ${a.name} ↔ ${b.name}`);
+    }
+    function stepEmbassies(){
+      // trust drift for pairs with an embassy
+      for(const e of EMB.list){
+        const a = window.factions.find(f=>f.id===e.a);
+        const b = window.factions.find(f=>f.id===e.b);
+        if(!a||!b) continue;
+        const rAB = a.relations?.get(b.id); if(rAB){ rAB.trust = Math.min(100, (rAB.trust||50)+0.25); rAB.enemy=false; if(rAB.trust>65) rAB.ally=true; }
+        const rBA = b.relations?.get(a.id); if(rBA){ rBA.trust = Math.min(100, (rBA.trust||50)+0.25); rBA.enemy=false; if(rBA.trust>65) rBA.ally=true; }
+      }
+      // propose new ones periodically among allies lacking embassy
+      if(((window.generation||0) % EMB.proposeEvery)===0){
+        for(const a of window.factions){
+          for(const b of window.factions){
+            if(!a||!b||a.id>=b.id) continue;
+            const r = a.relations?.get(b.id);
+            if(r && r.trust>62 && !EMB.list.some(x=>(x.a===a.id&&x.b===b.id)||(x.a===b.id&&x.b===a.id))){
+              newEmbassy(a,b); return;
+            }
+          }
+        }
+      }
+    }
+    function renderEmbassies(){
+      const tgt = ensureSubpanel('diplomacy-list', EMB.uiId, 'Embassy Network');
+      if(!tgt) return;
+      const rows = EMB.list.slice(-8).map(e=>{
+        const A = window.factions.find(f=>f.id===e.a)?.name||e.a;
+        const B = window.factions.find(f=>f.id===e.b)?.name||e.b;
+        return `<div>${A} ↔ ${B}</div>`;
+      }).join('') || '—';
+      setHTML(EMB.uiId+'-content', rows);
+    }
+
+    /* ===================== 2) ROUTE GUILDS ===================== */
+    const GUILD = { uiId:'vb-route-guilds', members:new Set(), throughput:1.0 };
+    function stepGuilds(){
+      // become member if tradeRoutes >= 3 and standards openStats OR greenLog
+      for(const f of window.factions){
+        const rcount = (f.tradeRoutes&&f.tradeRoutes.length)||0;
+        const std = f.standards||{};
+        if(rcount>=3 && (std.openStats||std.greenLog)){
+          GUILD.members.add(f.id);
+        }
+      }
+      // global throughput buff based on membership density (small)
+      const ratio = GUILD.members.size / Math.max(1, window.factions.length);
+      GUILD.throughput = 1 + Math.min(0.15, ratio*0.2);
+      // occasionally trigger trade pulse to represent reroutes
+      if(Math.random()<0.03*GUILD.throughput) _push('trade','route guild optimization');
+    }
+    function renderGuilds(){
+      const tgt = ensureSubpanel('trade-list', GUILD.uiId, 'Route Guilds');
+      if(!tgt) return;
+      const names = [...GUILD.members].map(id=>window.factions.find(f=>f.id===id)?.name||id).join(', ') || '—';
+      setHTML(GUILD.uiId+'-content', `<div>Members: ${names}</div><div>Throughput x<b>${GUILD.throughput.toFixed(2)}</b></div>`);
+    }
+
+    /* ===================== 3) BARTER BUNDLES ===================== */
+    const BART = { uiId:'vb-barter', recipes:[
+      {in:{culture:3, tech:1}, out:{artifact:1}},
+      {in:{mats:5}, out:{rare:1}},
+      {in:{gold:2}, out:{gem:1}},
+    ], completeTick:0 };
+    function stepBarter(){
+      // Simulate barter success between allied pairs; mint a small wallet transfer as proxy
+      if(Math.random()<0.05){
+        const allies = alliedPairs();
+        if(!allies.length) return;
+        const [a,b] = pick(allies);
+        const fA = a, fB=b;
+        ensureWallet(fA); ensureWallet(fB);
+        // swap a bit: A sends culture/tech vibe → B gives relic/gem vibe (proxy using B wallet B and A wallet A)
+        fA.wallet.A += 0.2; fB.wallet.B += 0.2;
+        BART.completeTick = (window.generation||0);
+        _push('trade','barter bundle executed');
+      }
+    }
+    function alliedPairs(){
+      const pairs=[];
+      for(const a of window.factions){
+        for(const b of window.factions){
+          if(!a||!b||a.id>=b.id) continue;
+          const r=a.relations?.get(b.id); if(r && r.trust>58) pairs.push([a,b]);
+        }
+      }
+      return pairs;
+    }
+    function renderBarter(){
+      const tgt = ensureSubpanel('trade-list', BART.uiId, 'Barter Bundles');
+      if(!tgt) return;
+      const rec = BART.recipes.map(r=>{
+        const ins = Object.entries(r.in).map(([k,v])=>`${v} ${k}`).join(' + ');
+        const outs = Object.entries(r.out).map(([k,v])=>`${v} ${k}`).join(' + ');
+        return `<div>${ins} → <b>${outs}</b></div>`;
+      }).join('');
+      setHTML(BART.uiId+'-content', `${rec}<div>Last executed: Gen <b>${BART.completeTick||'—'}</b></div>`);
+    }
+
+    /* ===================== 4) MUTUAL AID CORRIDORS ===================== */
+    const AID = { uiId:'vb-aid', corridors:[] };
+    function stepAid(){
+      // mark some allied routes as aid corridors and move A from surplus to deficit
+      for(const f of window.factions){
+        ensureWallet(f);
+      }
+      const allies = alliedPairs();
+      if(allies.length && AID.corridors.length<6){
+        const [a,b]=pick(allies);
+        const routeCount = ((a.tradeRoutes||[]).length + (b.tradeRoutes||[]).length);
+        if(routeCount>0 && !AID.corridors.some(c=>(c.a===a.id&&c.b===b.id)||(c.a===b.id&&c.b===a.id))){
+          AID.corridors.push({a:a.id,b:b.id});
+        }
+      }
+      for(const c of AID.corridors){
+        const A = window.factions.find(f=>f.id===c.a);
+        const B = window.factions.find(f=>f.id===c.b);
+        if(!A||!B) continue;
+        const donor = (A.wallet.A||0)>(B.wallet.A||0) ? A : B;
+        const recv  = donor===A? B : A;
+        const amt = Math.min(0.5, Math.max(0, (donor.wallet.A||0)-3)*0.02);
+        if(amt>0){ donor.wallet.A -= amt; recv.wallet.A += amt; if(Math.random()<0.05) _push('migration','mutual aid transfer'); }
+        // nearby citizen energy bump near markets of receiver
+        const mkts = (window.buildings||[]).filter(x=>x.type==='market' && x.faction===recv.id);
+        const anchor = mkts[0];
+        if(anchor){
+          const near = (window.getNearbyFromBuckets? window.getNearbyFromBuckets(window.npcBuckets||new Map(), anchor.x, anchor.y, 120):window.npcs)
+                        .filter(n=>!n.dead && Math.hypot(n.x-anchor.x,n.y-anchor.y)<120 && n.faction===recv.id);
+          for(let i=0;i<Math.min(10, near.length); i++){ const n=near[i]; n.energy = Math.min(100, (n.energy||60)+0.6); }
+        }
+      }
+    }
+    function renderAid(){
+      const tgt = ensureSubpanel('diplomacy-list', AID.uiId, 'Mutual Aid Corridors');
+      if(!tgt) return;
+      const rows = AID.corridors.map(c=>{
+        const A = window.factions.find(f=>f.id===c.a)?.name||c.a;
+        const B = window.factions.find(f=>f.id===c.b)?.name||c.b;
+        return `<div>${A} ↔ ${B}</div>`;
+      }).join('') || '—';
+      setHTML(AID.uiId+'-content', rows);
+    }
+
+    /* ===================== 5) JOINT PROCUREMENT ===================== */
+    const PROC = { uiId:'vb-procure', orders:[], cadence:280, items:['university','observatory','market'] };
+    function proposeProcurement(){
+      const allies = alliedPairs(); if(!allies.length) return;
+      const [a,b]=pick(allies);
+      const item = pick(PROC.items);
+      const need = {G: 12+Math.random()*10, A: 8+Math.random()*6, B: 10+Math.random()*8};
+      PROC.orders.push({id:'PRC'+Math.random().toString(36).slice(2,7).toUpperCase(), item, signatories:[a.id,b.id], need, got:{G:0,A:0,B:0}, done:false});
+      _push('procurement', `Joint procurement: ${item}`);
+    }
+    function stepProcurement(){
+      if(((window.generation||0) % PROC.cadence)===0 && PROC.orders.length<4) proposeProcurement();
+      for(const p of PROC.orders){
+        if(p.done) continue;
+        for(const fid of p.signatories){
+          const f = window.factions.find(x=>x.id===fid); if(!f) continue; ensureWallet(f);
+          const g=Math.min(0.25, Math.max(0, (f.wallet.G||0)-4)*0.03);
+          const a=Math.min(0.2,  Math.max(0, (f.wallet.A||0)-3)*0.03);
+          const b=Math.min(0.25, Math.max(0, (f.wallet.B||0)-3)*0.03);
+          if(p.got.G<p.need.G && g>0){ f.wallet.G-=g; p.got.G+=g; }
+          if(p.got.A<p.need.A && a>0){ f.wallet.A-=a; p.got.A+=a; }
+          if(p.got.B<p.need.B && b>0){ f.wallet.B-=b; p.got.B+=b; }
+        }
+        const pct = (p.got.G/p.need.G + p.got.A/p.need.A + p.got.B/p.need.B)/3;
+        if(pct>=1 && !p.done){
+          p.done=true;
+          // Build near a signatory market
+          const anchorFaction = window.factions.find(f=>f.id===p.signatories[0]);
+          const mkts = (window.buildings||[]).filter(x=>x.type==='market' && x.faction===anchorFaction.id);
+          const m=mkts[0];
+          if(typeof window.createBuilding==='function' && m){
+            window.createBuilding(p.item, m.x+12, m.y+6, {}, anchorFaction.id);
+          }
+          _push('build', `Joint-built ${p.item}`);
+          window.majorEvents.unshift(`Gen ${window.generation}: 🛠️ Joint Procurement completed — ${p.item}`);
+        }
+      }
+    }
+    function renderProcurement(){
+      const tgt = ensureSubpanel('trade-list', PROC.uiId, 'Joint Procurement');
+      if(!tgt) return;
+      const rows = PROC.orders.slice(-6).map(p=>{
+        const pct = Math.min(100, Math.round(100*( (p.got.G/p.need.G + p.got.A/p.need.A + p.got.B/p.need.B)/3 )));
+        const sigs = p.signatories.map(id=>window.factions.find(f=>f.id===id)?.name||id).join(' + ');
+        return `<div>${p.item}: ${sigs} — <b>${pct}%</b> (G ${p.got.G.toFixed(1)}/${p.need.G.toFixed(1)}, A ${p.got.A.toFixed(1)}/${p.need.A.toFixed(1)}, B ${p.got.B.toFixed(1)}/${p.need.B.toFixed(1)})</div>`;
+      }).join('') || '—';
+      setHTML(PROC.uiId+'-content', rows);
+    }
+
+    /* ===================== 6) SABBATICAL EXCHANGE ===================== */
+    const SABB = { uiId:'vb-sabbatical', active:[], cadence:220, duration:180 };
+    function stepSabbaticals(){
+      const gen = window.generation||0;
+      if(gen % SABB.cadence === 0){
+        const pairs = alliedPairs(); if(!pairs.length) return;
+        const [a,b]=pick(pairs);
+        const poolA = (window.npcs||[]).filter(n=>!n.dead && n.faction===a.id && (n.trait==='Scholar'||n.trait==='Artist'));
+        const poolB = (window.npcs||[]).filter(n=>!n.dead && n.faction===b.id && (n.trait==='Scholar'||n.trait==='Artist'));
+        const nA = pick(poolA), nB = pick(poolB);
+        if(nA && nB){
+          SABB.active.push({aid:nA.id, bid:nB.id, aFrom:a.id, bFrom:b.id, end: gen+SABB.duration});
+          nA.faction=b.id; nB.faction=a.id;
+          nA.learning=(nA.learning||0)+0.6; nB.learning=(nB.learning||0)+0.6;
+          _push('migration','sabbatical exchange');
+          window.majorEvents.unshift(`Gen ${gen}: 🎓 Sabbatical Exchange — ${a.name} ↔ ${b.name}`);
+        }
+      }
+      // return when done
+      for(const s of SABB.active){
+        if(!s.done && (window.generation||0) >= s.end){
+          const nA = (window.npcs||[]).find(n=>n.id===s.aid);
+          const nB = (window.npcs||[]).find(n=>n.id===s.bid);
+          if(nA) nA.faction = s.aFrom;
+          if(nB) nB.faction = s.bFrom;
+          s.done = true;
+        }
+      }
+    }
+    function renderSabbaticals(){
+      const tgt = ensureSubpanel('diplomacy-list', SABB.uiId, 'Sabbatical Exchange');
+      if(!tgt) return;
+      const rows = SABB.active.slice(-6).map(s=>{
+        const A = window.factions.find(f=>f.id===s.aFrom)?.name||s.aFrom;
+        const B = window.factions.find(f=>f.id===s.bFrom)?.name||s.bFrom;
+        const left = Math.max(0, s.end-(window.generation||0));
+        return `<div>${A} ↔ ${B} — ${s.done?'returned':`ends in ${left}g`}</div>`;
+      }).join('') || '—';
+      setHTML(SABB.uiId+'-content', rows);
+    }
+
+    /* ===================== 7) OPEN-BORDER LOGISTICS (CABOTAGE) ===================== */
+    const CAB = { uiId:'vb-cabotage', pairs:new Set() };
+    function stepCabotage(){
+      for(const a of window.factions){
+        for(const b of window.factions){
+          if(!a||!b||a.id>=b.id) continue;
+          const r=a.relations?.get(b.id);
+          if(r && r.trust>64){
+            CAB.pairs.add(a.id+'|'+b.id);
+            // throughput buff by spinning trade pulses more often
+            if(Math.random()<0.03) _push('trade','cabotage rights applied');
+          }
+        }
+      }
+    }
+    function renderCabotage(){
+      const tgt = ensureSubpanel('trade-list', CAB.uiId, 'Open-Border Logistics');
+      if(!tgt) return;
+      const rows = [...CAB.pairs].slice(-8).map(k=>{
+        const [a,b]=k.split('|'); const A=window.factions.find(f=>f.id==a)?.name||a; const B=window.factions.find(f=>f.id==b)?.name||b;
+        return `<div>${A} ↔ ${B}</div>`;
+      }).join('') || '—';
+      setHTML(CAB.uiId+'-content', rows);
+    }
+
+    /* ===================== 8) FREEPORTS & ENTREPÔTS ===================== */
+    const FRP = { uiId:'vb-freeports', ids:new Set(), target:3 };
+    function stepFreeports(){
+      const mkts = (window.buildings||[]).filter(b=>b.type==='market');
+      while(FRP.ids.size < Math.min(FRP.target, mkts.length)){
+        const m = pick(mkts); FRP.ids.add(m.x+'|'+m.y+'|'+m.faction);
+        _push('trade','freeport opened');
+      }
+      // small CPI smoothing & trade pulse
+      if(typeof window.economyIndex==='number'){
+        window.economyIndex = clamp(window.economyIndex * 0.998, 0.5, 2.5);
+      }
+      if(Math.random()<0.04) _push('trade','entrepôt transit');
+    }
+    function renderFreeports(){
+      const tgt = ensureSubpanel('trade-list', FRP.uiId, 'Freeports & Entrepôts');
+      if(!tgt) return;
+      const rows = [...FRP.ids].slice(-6).map(k=>{
+        const parts=k.split('|'); const f=window.factions.find(x=>x.id==parts[2])?.name||parts[2];
+        return `<div>${f} @ (${parts[0]},${parts[1]})</div>`;
+      }).join('') || '—';
+      setHTML(FRP.uiId+'-content', rows);
+    }
+
+    /* ===================== 9) ALLIANCE MEGAPROJECT SHARES ===================== */
+    const SH = { uiId:'vb-shares', calcEvery:120, table:[] };
+    function stepProjectShares(){
+      if(((window.generation||0)%SH.calcEvery)!==0) return;
+      SH.table.length=0;
+      const MEGA = window.MEGA || window.__MEGA__ || null; // in case projects live under a known var
+      const src = (MEGA && MEGA.projects) ? MEGA.projects : (window.__projects || []);
+      const projs = (window.MEGA && window.MEGA.projects) || (window.__VB_SOCIAL_EXPANSION__ && window.MEGA?.projects) || (window.__projects||[]);
+      const arr = window.MEGA?.projects || (window.__VB_SOCIAL_EXPANSION__?window.MEGA?.projects:[]);
+      const projects = window.MEGA?.projects || (window.__VB_SOCIAL_EXPANSION__?[]:[]);
+      const list = window.MEGA?.projects || (window.__MEGA__?.projects) || (window.__VB_SOCIAL_EXPANSION__?[]:[]);
+      const ps = window.MEGA?.projects || []; // fallback if not found
+      const use = (ps && ps.length)? ps : (window.MEGA?.projects || []);
+      const P = use;
+      for(const p of P){
+        const tot = (p.have?.G||0)+(p.have?.A||0)+(p.have?.B||0);
+        if(!tot) continue;
+        const row={name:p.name, shares:[]};
+        for(const fid of (p.signatories||[])){
+          const contrib = ((p._contrib&&p._contrib[fid]) || (tot/(p.signatories.length||1)));
+          const share = Math.max(0.05, contrib / tot);
+          row.shares.push({fid, share});
+          const f = window.factions.find(x=>x.id===fid); if(f){ f.harmonyIndex = Math.min(1, (f.harmonyIndex||0.5)+share*0.01); }
+        }
+        SH.table.push(row);
+      }
+    }
+    function renderShares(){
+      const tgt = ensureSubpanel('diplomacy-list', SH.uiId, 'Alliance Megaproject Shares');
+      if(!tgt) return;
+      const rows = SH.table.slice(-6).map(r=>{
+        const parts = r.shares.map(s=>`${window.factions.find(f=>f.id===s.fid)?.name||s.fid}: ${(s.share*100).toFixed(1)}%`).join(' • ');
+        return `<div><b>${r.name}</b> — ${parts}</div>`;
+      }).join('') || '—';
+      setHTML(SH.uiId+'-content', rows);
+    }
+
+    /* ===================== 10) KNOWLEDGE ESCROW ===================== */
+    const ESC = { uiId:'vb-escrow', topics:[], cadence:260 };
+    function stepEscrow(){
+      if(((window.generation||0)%ESC.cadence)===0 && ESC.topics.length<4){
+        const allies = alliedPairs(); if(!allies.length) return;
+        const [a,b]=pick(allies);
+        ESC.topics.push({id:'ESC'+Math.random().toString(36).slice(2,7).toUpperCase(), name:pick(['Open Star Atlas','Festival Toolkit','Bridge Diagnostics','Sanctuary Genomics']), parts:[a.id,b.id], prog:0, target:120});
+      }
+      for(const t of ESC.topics){
+        // progress grows with universities and standards openStats/eduCreds
+        const uni = (window.buildings||[]).filter(x=>x.type==='university' && t.parts.includes(x.faction)).length;
+        t.prog = Math.min(t.target, t.prog + 0.5 + uni*0.4);
+        if(t.prog>=t.target && !t.done){
+          t.done=true;
+          for(const fid of t.parts){ const f=window.factions.find(x=>x.id===fid); if(!f) continue; ensureWallet(f); f.wallet.B += 1.0; }
+          _push('research', `Knowledge Escrow released: ${t.name}`);
+          window.majorEvents.unshift(`Gen ${window.generation}: 📚 Knowledge Escrow — ${t.name} released`);
+        }
+      }
+    }
+    function renderEscrow(){
+      const tgt = ensureSubpanel('research-list', ESC.uiId, 'Knowledge Escrow');
+      if(!tgt) return;
+      const rows = ESC.topics.slice(-6).map(t=>{
+        const pct = Math.min(100, Math.round(100*t.prog/t.target));
+        const parties = t.parts.map(id=>window.factions.find(f=>f.id===id)?.name||id).join(' + ');
+        return `<div>${t.name}: ${parties} — <b>${pct}%</b></div>`;
+      }).join('') || '—';
+      setHTML(ESC.uiId+'-content', rows);
+    }
+
+    /* ===================== 11) MULTI-HOP ROUTE OPTIMIZER ===================== */
+    const MHO = { uiId:'vb-mhop', optimizations:0 };
+    function stepMultiHop(){
+      // lightweight: when many routes exist, push a few "optimized" pulses through freeports
+      const routeCount = window.factions.reduce((s,f)=>s+((f.tradeRoutes&&f.tradeRoutes.length)||0),0);
+      if(routeCount>12 && Math.random()<0.05){
+        MHO.optimizations++;
+        _push('trade','multi-hop optimized via freeports');
+        if(typeof window.economyIndex==='number'){ window.economyIndex = clamp(window.economyIndex*0.999, 0.5, 2.5); }
+      }
+    }
+    function renderMultiHop(){
+      const tgt = ensureSubpanel('trade-list', MHO.uiId, 'Multi‑Hop Optimizer');
+      if(!tgt) return;
+      setHTML(MHO.uiId+'-content', `<div>Optimized shipments: <b>${MHO.optimizations}</b></div>`);
+    }
+
+    /* ===================== INTEGRATION ===================== */
+    window.update = function(){
+      _prevUpdate();
+
+      stepEmbassies();    renderEmbassies();
+      stepGuilds();       renderGuilds();
+      stepBarter();       renderBarter();
+      stepAid();          renderAid();
+      stepProcurement();  renderProcurement();
+      stepSabbaticals();  renderSabbaticals();
+      stepCabotage();     renderCabotage();
+      stepFreeports();    renderFreeports();
+      stepProjectShares();renderShares();
+      stepEscrow();       renderEscrow();
+      stepMultiHop();     renderMultiHop();
+    };
+
+    // Legend chip
+    const legend=document.getElementById('legendBox');
+    if(legend){ const tag=document.createElement('div'); tag.className='item'; tag.innerHTML=`<span class="dot" style="background:#10b981"></span><span>Alliance & Networking Systems</span>`; legend.appendChild(tag); }
+  }
+})();
+</script>
+<!-- ====== END: Alliance & Networking Patch ====== -->
+
+<!-- ====== START: Trade & Markets Enhancement Patch (Capacity • Prices • Insurance) ====== -->
+<script>
+(function(){
+  function ready(){
+    if(typeof window.update !== 'function' || !window.factions || !window.buildings){ setTimeout(ready, 60); return; }
+    const _prevUpdate = window.update;
+    const _push = window.pushEvent || function(){};
+    const $ = (id)=>document.getElementById(id);
+    const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+    const pick=(arr)=>arr[Math.floor(Math.random()*arr.length)];
+
+    function ensureSubpanel(containerId, subId, title){
+      const host = $(containerId); if(!host) return null;
+      let sub = document.getElementById(subId);
+      if(!sub){
+        sub = document.createElement('div');
+        sub.id = subId;
+        sub.innerHTML = `<div class="statbox"><b>${title}</b><div id="${subId}-content" style="font-size:12px;margin-top:4px"></div></div>`;
+        host.parentElement?.insertBefore(sub, host.nextSibling);
+      }
+      return document.getElementById(subId+'-content');
+    }
+    function setHTML(id, html){
+      const el=document.getElementById(id); if(el) el.innerHTML = html;
+    }
+    function ensureWallet(f){ if(!f.wallet) f.wallet={G:2,A:2,B:2}; }
+
+    // ===== Route Capacity & Congestion =====
+    const CAP = { uiId:'vb-capacity' };
+    function initRoute(route){
+      if(route._inited) return;
+      route.capacity = route.capacity ?? 40;
+      route.load     = route.load     ?? 0;
+      route.risk     = route.risk     ?? 0.02;
+      route.lastPulse= route.lastPulse?? 0;
+      route.convoyEscort = route.convoyEscort ?? 0;
+      route._inited = true;
+    }
+    function fortressEscortBonus(route){
+      const mx = (route.fromMarket.x + route.toMarket.x)/2;
+      const my = (route.fromMarket.y + route.toMarket.y)/2;
+      const near = (window.buildings||[]).some(b => b.type==='fortress' && Math.hypot(b.x-mx,b.y-my) < 120);
+      return near ? 0.15 : 0;
+    }
+    function routeThroughput(route){
+      const guildBuff = window.__ROUTE_GUILD_THROUGHPUT__ || 1.0;
+      const escort = route.convoyEscort + fortressEscortBonus(route);
+      const free = Math.max(0, route.capacity - route.load);
+      const base = 1 + escort;
+      return clamp(base * guildBuff, 0, free + 1e-6);
+    }
+    function coolDownRoutes(){
+      for(const f of window.factions){
+        for(const r of (f.tradeRoutes||[])){
+          initRoute(r);
+          r.load = Math.max(0, r.load - 0.5);
+        }
+      }
+    }
+    function renderCapacity(){
+      const tgt = ensureSubpanel('trade-list', CAP.uiId, 'Route Capacity & Congestion');
+      if(!tgt) return;
+      const rows=[];
+      for(const f of window.factions){
+        if(!(f.tradeRoutes&&f.tradeRoutes.length)) continue;
+        rows.push(`<div style="margin:4px 0"><b>${f.name}</b></div>`);
+        for(const r of f.tradeRoutes){
+          const d = Math.hypot(r.fromMarket.x - r.toMarket.x, r.fromMarket.y - r.toMarket.y)|0;
+          const pct = Math.min(100, Math.round(100 * (r.load/Math.max(1,r.capacity))));
+          rows.push(`<div style="display:flex;justify-content:space-between">
+            <span>• ${d}u — cap <b>${r.capacity}</b>, load <b>${r.load.toFixed(1)}</b>, risk ${Math.round(r.risk*100)}%</span>
+            <span style="font-family:monospace">[${'█'.repeat(Math.round(pct/10))}${'░'.repeat(10-Math.round(pct/10))}] ${pct}%</span>
+          </div>`);
+        }
+      }
+      setHTML(CAP.uiId+'-content', rows.join('') || '—');
+    }
+
+    // ===== Market Specialization & Local Prices =====
+    const MSP = { uiId:'vb-markets', kinds:['food','tech','luxury'] };
+    function ensureMarketMeta(){
+      for(const b of (window.buildings||[])){
+        if(b.type !== 'market') continue;
+        b.meta = b.meta || {};
+        if(!b.meta.specialization){
+          const biome = (b.biome || inferBiome(b.x,b.y) || '');
+          let s = pick(MSP.kinds);
+          if(biome==='nebula') s = Math.random()<0.6 ? 'luxury' : s;
+          if(biome==='belt')   s = Math.random()<0.6 ? 'tech'   : s;
+          b.meta.specialization = s;
+        }
+        if(typeof b.meta.priceMult !== 'number'){
+          b.meta.priceMult = 1 + (Math.random()*0.2 - 0.1);
+        }
+      }
+    }
+    function inferBiome(x,y){
+      const v = Math.sin(x*0.001)+Math.cos(y*0.0015);
+      if(v>1.0) return 'nebula';
+      if(v<-1.0) return 'belt';
+      return 'plains';
+    }
+    function stepLocalPrices(){
+      const byKey = {};
+      for(const b of (window.buildings||[])){
+        if(b.type!=='market') continue;
+        byKey[b.meta.specialization] = (byKey[b.meta.specialization]||0)+1;
+      }
+      const avg = Math.max(1, Object.values(byKey).reduce((a,b)=>a+b,0)/MSP.kinds.length);
+      for(const b of (window.buildings||[])){
+        if(b.type!=='market') continue;
+        const pop = byKey[b.meta.specialization] || 1;
+        const scarcity = clamp((avg/pop)-1, -0.5, 0.5);
+        b.meta.priceMult = clamp(b.meta.priceMult + 0.01*scarcity + (Math.random()*0.01-0.005), 0.7, 1.5);
+      }
+    }
+    function renderMarkets(){
+      const tgt = ensureSubpanel('trade-list', MSP.uiId, 'Market Specialization & Local Prices');
+      if(!tgt) return;
+      const rows = (window.buildings||[])
+        .filter(b=>b.type==='market')
+        .slice(0,48)
+        .map(b=>`<div>• ${b.faction||'?'} @(${b.x|0},${b.y|0}): <b>${b.meta.specialization}</b> — price x<b>${b.meta.priceMult.toFixed(2)}</b></div>`);
+      setHTML(MSP.uiId+'-content', rows.join('') || '—');
+    }
+
+    // ===== Mutual Aid Corridors & Insurance Pool =====
+    const INS = {
+      uiId:'vb-insurance',
+      pool:{G:5},
+      premiumRate: 0.02,
+      coverage: 0.6,
+      last:{premiums:0,payouts:0,events:0}
+    };
+    function renderInsurance(){
+      const tgt = ensureSubpanel('trade-list', INS.uiId, 'Insurance Pool (Mutual Aid)');
+      if(!tgt) return;
+      setHTML(INS.uiId+'-content',
+        `<div>Pool G: <b>${INS.pool.G.toFixed(2)}</b></div>
+         <div>Last tick — premiums: <b>${INS.last.premiums.toFixed(2)}</b>, payouts: <b>${INS.last.payouts.toFixed(2)}</b>, loss events: <b>${INS.last.events}</b></div>`);
+    }
+
+    // ===== Trade Pulse =====
+    function compatible(aSpec, bSpec){
+      if(aSpec===bSpec) return 1.0;
+      const pair = [aSpec,bSpec].sort().join('-');
+      if(['food-tech','food-luxury','tech-luxury'].includes(pair)) return 1.15;
+      return 1.0;
+    }
+    function extractGuildFactor(txt){
+      const m = /Throughput x([\\d.]+)/.exec(txt||'');
+      const n = m ? parseFloat(m[1]) : 1.0;
+      return isFinite(n) ? n : 1.0;
+    }
+    function tradePulse(){
+      INS.last = {premiums:0,payouts:0,events:0};
+      const guildNode = document.getElementById('vb-route-guilds-content');
+      window.__ROUTE_GUILD_THROUGHPUT__ = guildNode ? extractGuildFactor(guildNode.innerText) : 1.0;
+
+      for(const f of window.factions){
+        ensureWallet(f);
+        for(const r of (f.tradeRoutes||[])){
+          initRoute(r);
+          const tp = routeThroughput(r);
+          if(tp <= 0) continue;
+          const mA = r.fromMarket, mB = r.toMarket;
+          if(!mA?.meta?.specialization || !mB?.meta?.specialization) continue;
+          const econ = (window.economyIndex || 1.0) * (f.economyIndex || 1.0);
+          const priceDiff = (mB.meta.priceMult - mA.meta.priceMult);
+          const comp = compatible(mA.meta.specialization, mB.meta.specialization);
+          const unitValue = clamp(0.6 + priceDiff*0.8, 0.1, 2.0) * comp * econ;
+
+          const moved = tp;
+          const value = moved * unitValue;
+
+          const premium = value * INS.premiumRate;
+          INS.pool.G += premium; INS.last.premiums += premium;
+
+          const fA = window.factions.find(x=>x.id===mA.faction) || f;
+          const fB = window.factions.find(x=>x.id===mB.faction) || f;
+          ensureWallet(fA); ensureWallet(fB);
+          fA.wallet.G += value*0.4;
+          fB.wallet.G += value*0.6;
+
+          const rel = fA.relations?.get?.(fB.id); if(rel){ rel.trust = clamp(rel.trust + 0.02, 0, 100); }
+
+          const lossHappened = Math.random() < Math.max(0, r.risk - (r.convoyEscort||0)*0.5);
+          if(lossHappened){
+            INS.last.events++;
+            const loss = value * 0.5;
+            fA.wallet.G = Math.max(0, fA.wallet.G - loss*0.5);
+            fB.wallet.G = Math.max(0, fB.wallet.G - loss*0.5);
+            if(r.aidCorridor && INS.pool.G > 0){
+              const payout = Math.min(INS.pool.G, loss * INS.coverage);
+              INS.pool.G -= payout; INS.last.payouts += payout;
+              fA.wallet.G += payout*0.4; fB.wallet.G += payout*0.6;
+              _push('trade', 'insurance payout along aid corridor');
+            }
+          }
+          r.load = clamp(r.load + moved, 0, r.capacity + 10);
+          r.lastPulse = (window.generation||0);
+        }
+      }
+    }
+
+    function tagAidCorridorsLight(){
+      const pairs=[];
+      for(const a of window.factions){
+        for(const b of window.factions){
+          if(!a||!b||a.id>=b.id) continue;
+          const r=a.relations?.get?.(b.id); if(r && r.trust>58) pairs.push([a,b]);
+        }
+      }
+      for(const [a,b] of pairs){
+        const aRoutes = (a.tradeRoutes||[]).filter(x=>!x.aidCorridor);
+        const bRoutes = (b.tradeRoutes||[]).filter(x=>!x.aidCorridor);
+        const pool = [...aRoutes, ...bRoutes];
+        if(!pool.length) continue;
+        const route = pool.sort((r1,r2)=>{
+          const d1 = Math.hypot(r1.fromMarket.x - r1.toMarket.x, r1.fromMarket.y - r1.toMarket.y);
+          const d2 = Math.hypot(r2.fromMarket.x - r2.toMarket.x, r2.fromMarket.y - r2.toMarket.y);
+          return d1 - d2;
+        })[0];
+        if(route){ route.aidCorridor = true; }
+      }
+    }
+
+    window.update = function(){
+      _prevUpdate();
+      ensureMarketMeta();
+      stepLocalPrices();
+      tagAidCorridorsLight();
+      coolDownRoutes();
+      tradePulse();
+      renderCapacity();
+      renderMarkets();
+      renderInsurance();
+    };
+
+    const legend=document.getElementById('legendBox');
+    if(legend){
+      const tag=document.createElement('div');
+      tag.className='item';
+      tag.innerHTML=`<span class="dot" style="background:#0ea5e9"></span><span>Trade & Prices (Capacity/Insurance)</span>`;
+      legend.appendChild(tag);
+    }
+  }
+  ready();
+})();
+</script>
+<!-- ====== END: Trade & Markets Enhancement Patch ====== -->
+
+</body>
+</html>
+<!-- ========== BEGIN: SAFE add-on — Peace Tuning & De‑escalation (non-invasive) ========== -->
+<script>
+(function(){
+  const G = window;
+  G.VB_EX = G.VB_EX || {};
+  const EX = G.VB_EX;
+  EX.peace = EX.peace || {};
+  const P = EX.peace;
+
+  // Persisted pacifism level [0..1]
+  P.level = Number(localStorage.getItem('vb_pacifism')||0.7);
+  function saveLevel(){ localStorage.setItem('vb_pacifism', String(P.level)); }
+
+  // UI control in Game Controls
+  function mountPacifismUI(){
+    if (document.getElementById('vb-pacifism-wrap')) return;
+    if (typeof G.ensureSubpanel !== 'function') return;
+    const parent = G.ensureSubpanel('game-controls', 'vb-pacifism-wrap', 'Peace Tuning');
+    if (!parent) return;
+    const html = `
+      <div style="padding:6px 4px">
+        <label style="display:flex;align-items:center;gap:8px">
+          <span style="min-width:96px">Pacifism</span>
+          <input id="vb-pacifism" type="range" min="0" max="1" step="0.05" value="${P.level}"/>
+          <span id="vb-pacifism-val">${(P.level*100)|0}%</span>
+        </label>
+        <small style="opacity:.8">Higher = fewer wars, softer battles, faster diplomacy.</small>
+      </div>`;
+    const el = document.getElementById('vb-pacifism-wrap-content');
+    if (el) el.innerHTML = html;
+    const input = document.getElementById('vb-pacifism');
+    const out = document.getElementById('vb-pacifism-val');
+    if (input){
+      input.addEventListener('input', (e)=>{
+        P.level = Number(e.target.value);
+        out.textContent = ((P.level*100)|0)+'%';
+        saveLevel();
+      });
+    }
+  }
+
+  // Soft diplomacy drift each tick
+  function deescalateRelations(){
+    const F = G.factions||[];
+    const now = G.generation||0;
+    for (const f of F){
+      if (!f || !f.relations) continue;
+      for (const [key, rel] of Object.entries(f.relations)){
+        if (!rel || typeof rel!=='object') continue;
+        if (rel.truceUntil && rel.truceUntil > now) continue;
+        const k = 0.02 * P.level;
+        if (typeof rel.anger === 'number') rel.anger += (0 - rel.anger) * k;
+        if (typeof rel.hostility === 'number') rel.hostility += (0 - rel.hostility) * k;
+        if (typeof rel.trust === 'number') rel.trust += (0.25 - rel.trust) * (k*0.6);
+        if ((rel.anger||0) > 0.75 && Math.random() < P.level*0.03){
+          rel.truceUntil = now + Math.floor(120 + 240*P.level);
+        }
+      }
+    }
+  }
+
+  // War weariness via casualty tracking (if killNPC exists)
+  P.casualties = P.casualties || {};
+  function wrapKillNPC(){
+    if (P._wrappedKill || typeof G.killNPC!=='function') return;
+    const orig = G.killNPC;
+    G.killNPC = function(npc, ...rest){
+      if (npc && !npc.dead && Math.random() < P.level*0.35){
+        npc.injured = true;
+        npc.hp = Math.max(1, (npc.hp||1));
+        return;
+      }
+      const fId = npc && npc.faction;
+      if (fId != null){
+        P.casualties[fId] = (P.casualties[fId]||0) + 1;
+      }
+      return orig.apply(this, [npc, ...rest]);
+    };
+    P._wrappedKill = true;
+  }
+
+  // Dampen war decision functions if present
+  function wrapConsiderWar(){
+    const fnName = ['considerWar','aiConsiderWar','shouldStartWar'].find(n=>typeof G[n]==='function');
+    if (!fnName || P._wrappedConsider) return;
+    const orig = G[fnName];
+    G[fnName] = function(attacker, target, ...rest){
+      const lvl = P.level;
+      try{
+        const rel = attacker && attacker.relations && attacker.relations[target?.id];
+        const hostility = rel ? (rel.hostility||rel.anger||0) : 0;
+        const vetoChance = Math.min(0.9, 0.5 + lvl*0.5 - hostility*0.3);
+        if (Math.random() < vetoChance) return false;
+      }catch(e){}
+      return orig.apply(this, [attacker, target, ...rest]);
+    };
+    P._wrappedConsider = true;
+  }
+
+  // Reduce lethality in battle resolution if present
+  function wrapResolveBattle(){
+    const fnName = ['resolveBattle','simulateBattle','applyBattle'].find(n=>typeof G[n]==='function');
+    if (!fnName || P._wrappedBattle) return;
+    const orig = G[fnName];
+    G[fnName] = function(...args){
+      const out = orig.apply(this, args);
+      try{
+        if (out && typeof out==='object'){
+          const damp = 1 - (0.6*P.level);
+          if (typeof out.casualtiesA==='number') out.casualtiesA *= damp;
+          if (typeof out.casualtiesB==='number') out.casualtiesB *= damp;
+        }
+      }catch(e){}
+      return out;
+    };
+    P._wrappedBattle = true;
+  }
+
+  // Lower generic aggression if AI step exists
+  function wrapAIAggression(){
+    const fnName = ['aiStepFaction','aiStep','factionAIStep'].find(n=>typeof G[n]==='function');
+    if (!fnName || P._wrappedAI) return;
+    const orig = G[fnName];
+    G[fnName] = function(f, ...rest){
+      if (f && typeof f.aggression==='number'){
+        f.aggression *= (1 - 0.7*P.level);
+      }
+      return orig.apply(this, [f, ...rest]);
+    };
+    P._wrappedAI = true;
+  }
+
+  // Broker ceasefires based on weariness
+  function periodicCeasefires(){
+    const F = G.factions||[];
+    const now = G.generation||0;
+    for (const a of F){
+      for (const b of F){
+        if (!a || !b || a===b) continue;
+        const rel = a.relations && a.relations[b.id];
+        if (!rel) continue;
+        const wear = (P.casualties[a.id]||0) + (P.casualties[b.id]||0);
+        if (wear > 10 && Math.random() < P.level*0.1){
+          rel.truceUntil = now + Math.floor(300 + 360*P.level);
+          if (typeof G.pushEvent === 'function'){
+            G.pushEvent('diplomacy', `Ceasefire brokered between ${a.name} and ${b.name}`, {x:a.x||0,y:a.y||0});
+          }
+          P.casualties[a.id]=0; P.casualties[b.id]=0;
+        }
+      }
+    }
+  }
+
+  // Hook update safely
+  let wrapped = false;
+  function tryWrap(){
+    if (!wrapped && typeof G.update==='function'){
+      const prev = G.update;
+      G.update = function(){
+        prev();
+        mountPacifismUI();
+        deescalateRelations();
+        periodicCeasefires();
+        wrapKillNPC();
+        wrapConsiderWar();
+        wrapResolveBattle();
+        wrapAIAggression();
+      };
+      wrapped = true;
+    }
+  }
+  const timer = setInterval(tryWrap, 300);
+  window.addEventListener('load', tryWrap);
+  document.addEventListener('DOMContentLoaded', tryWrap);
+})();
+</script>
+<!-- ========== END: SAFE add-on — Peace Tuning & De‑escalation ========== -->
+
+<!-- ====== START: Add-on Patch — Corridors • Chains • IOUs • City Procurement • Licenses ====== -->
+<script>
+if (!window.__VB_TRADE_ADDONS__) (function(){
+  window.__VB_TRADE_ADDONS__ = true;
+
+  (function ready(){
+    if (typeof window.update==='function' && Array.isArray(window.factions) && Array.isArray(window.buildings)){
+      initTradeAddons();
+    } else setTimeout(ready, 60);
+  })();
+
+  function initTradeAddons(){
+    const _prevUpdate = window.update;
+    const _push = window.pushEvent || function(){};
+    const $ = (id)=>document.getElementById(id);
+    const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+    const pick=(arr)=>arr[Math.floor(Math.random()*arr.length)];
+    const now=()=>window.generation||0;
+
+    function ensureSubpanel(containerId, subId, title){
+      const host = $(containerId); if(!host) return null;
+      let sub = document.getElementById(subId);
+      if(!sub){
+        sub = document.createElement('div');
+        sub.id = subId;
+        sub.innerHTML = `<div class="statbox"><b>${title}</b><div id="${subId}-content" style="font-size:12px;margin-top:4px"></div></div>`;
+        host.parentElement?.insertBefore(sub, host.nextSibling);
+      }
+      return document.getElementById(subId+'-content');
+    }
+    function setHTML(id, html){ const el=document.getElementById(id); if(el) el.innerHTML = html; }
+    function ensureWallet(f){ if(!f.wallet) f.wallet={G:2,A:2,B:2}; }
+
+    /* =========================================================
+       1) TRADE CORRIDORS & MAINTENANCE
+       ========================================================= */
+    const COR = { uiId:'vb-corridors', map:new Map(), wearK:0.0006, upkeepK:0.003, feePerUnit:0.001 };
+    function corKey(a,b){ return [a,b].sort().join('|'); }
+    function stepCorridorsPre(){
+      const F = window.factions||[];
+      COR.map.clear();
+      for(const f of F){
+        for(const r of (f.tradeRoutes||[])){
+          const otherId = r.toFactionId ?? r.toId ?? r.to?.faction ?? r.to?.id;
+          if (!otherId) continue;
+          const k = corKey(f.id, otherId);
+          if(!COR.map.has(k)) COR.map.set(k, {id:k, members:[], condition:0.85, fee:COR.feePerUnit, upkeep:1});
+          const c = COR.map.get(k);
+          c.members.push({owner:f.id, route:r});
+        }
+      }
+      for(const [k,c] of COR.map){
+        for(const m of c.members){
+          const r = m.route;
+          if(r._corBaseCap==null) r._corBaseCap = r.capacity ?? 40;
+          r.capacity = r._corBaseCap * (0.8 + 0.2*clamp(c.condition,0,1));
+        }
+      }
+    }
+    function stepCorridorsPost(){
+      for(const [k,c] of COR.map){
+        let vol = 0;
+        for(const m of c.members){ vol += (m.route.lastMoved||0); }
+        const wear = vol * COR.wearK;
+        c.condition = clamp((c.condition ?? 0.85) - wear + c.upkeep*COR.upkeepK, 0.4, 1.0);
+        for(const m of c.members){
+          const moved = (m.route.lastMoved||0);
+          if (moved>0){
+            const f = window.factions.find(z=>z.id===m.owner); if(!f) continue;
+            ensureWallet(f);
+            const fee = moved * (c.fee||COR.feePerUnit);
+            f.wallet.G = Math.max(0, f.wallet.G - fee);
+          }
+        }
+      }
+    }
+    function restoreCorridorCaps(){
+      for(const f of (window.factions||[])){
+        for(const r of (f.tradeRoutes||[])){
+          if (r._corBaseCap!=null) r.capacity = r._corBaseCap;
+        }
+      }
+    }
+    function renderCorridors(){
+      const tgt = ensureSubpanel('trade-list', COR.uiId, 'Trade Corridors');
+      if(!tgt) return;
+      const rows = [...COR.map.entries()].slice(0,6).map(([k,c])=>{
+        const parts = k.split('|').map(id=>window.factions.find(f=>f.id===id)?.name||id).join(' ⇄ ');
+        return `<div>${parts}: cond <b>${((c.condition||0)*100|0)}%</b> • routes ${c.members.length}</div>`;
+      }).join('') || '—';
+      setHTML(COR.uiId+'-content', rows);
+    }
+
+    /* =========================================================
+       2) PRODUCT CHAINS & VALUE-ADD BONUSES
+       ========================================================= */
+    const CHA = { uiId:'vb-chains', stages:['raw','processed','parts','final'] };
+    function ensureChainStages(){
+      for(const b of (window.buildings||[])){
+        if (b.type!=='market') continue;
+        if (!b.chainStage) b.chainStage = CHA.stages[Math.floor(Math.random()*CHA.stages.length)];
+      }
+    }
+    function stepChainSynergyPre(){
+      ensureChainStages();
+      for(const f of (window.factions||[])){
+        for(const r of (f.tradeRoutes||[])){
+          if(r._chainBaseCap==null) r._chainBaseCap = r.capacity ?? 40;
+          let bonus = 1.0;
+          const A = (window.buildings||[]).find(b=>b.type==='market' && b.faction===f.id);
+          const otherId = r.toFactionId ?? r.toId ?? r.to?.faction ?? r.to?.id;
+          const B = (window.buildings||[]).find(b=>b.type==='market' && b.faction===otherId);
+          if (A && B){
+            const aI = CHA.stages.indexOf(A.chainStage||'raw');
+            const bI = CHA.stages.indexOf(B.chainStage||'raw');
+            const gap = Math.abs(aI-bI);
+            if (gap===1) bonus = 1.06;
+            else if (gap===2) bonus = 1.10;
+            else if (gap>=3) bonus = 1.12;
+          }
+          r.capacity = (r._chainBaseCap) * bonus;
+        }
+      }
+    }
+    function restoreChainCaps(){
+      for(const f of (window.factions||[])){
+        for(const r of (f.tradeRoutes||[])){
+          if (r._chainBaseCap!=null) r.capacity = r._chainBaseCap;
+        }
+      }
+    }
+    function renderChains(){
+      const tgt = ensureSubpanel('trade-list', CHA.uiId, 'Product Chains');
+      if(!tgt) return;
+      const rows = (window.buildings||[]).filter(b=>b.type==='market').slice(0,8)
+        .map(b=>`<div>${window.factions.find(f=>f.id===b.faction)?.name||b.faction} market @ (${b.x|0},${b.y|0}) — stage <b>${b.chainStage}</b></div>`)
+        .join('') || '—';
+      setHTML(CHA.uiId+'-content', rows);
+    }
+
+    /* =========================================================
+       3) FRIENDLY TRADE CREDITS (IOUs)
+       ========================================================= */
+    const IOU = { uiId:'vb-ious', capPerPair: 60, interest: 0.0008 };
+    function rel(a,b){ return a?.relations?.get?.(b?.id); }
+    function stepIOU(){
+      const F = window.factions||[];
+      for(const A of F){
+        for(const B of F){
+          if(!A||!B||A.id>=B.id) continue;
+          const rAB = rel(A,B); const rBA = rel(B,A); if(!rAB||!rBA) continue;
+          const friendly = (rAB.ally || (rAB.trust||0) > 68);
+          if (!friendly) continue;
+          let vol=0;
+          const add=(f, otherId)=> (f.tradeRoutes||[]).forEach(rt=>{
+            const toId = rt.toFactionId ?? rt.toId ?? rt.to?.faction ?? rt.to?.id;
+            const fromId = rt.fromFactionId ?? rt.fromId ?? rt.from?.faction ?? rt.from?.id;
+            if (toId===otherId || fromId===otherId) vol += (rt.lastMoved||0)*0.01;
+          });
+          add(A,B.id); add(B,A.id);
+          rAB._ext = rAB._ext || {}; rBA._ext = rBA._ext || {};
+          const bucketAB = rAB._ext; bucketAB.iou = bucketAB.iou||0;
+          const bucketBA = rBA._ext; bucketBA.iou = bucketBA.iou||0;
+          ensureWallet(A); ensureWallet(B);
+          const cap = IOU.capPerPair * ((rAB.trust||50)/100);
+          if (A.wallet.G < vol){
+            const short = Math.min(Math.max(0, cap - bucketAB.iou), Math.max(0, vol - A.wallet.G));
+            if (short>0){ bucketAB.iou += short; B.wallet.G += short; _push('iou', `${A.name} drew IOU ${short.toFixed(1)} from ${B.name}`); }
+          }
+          if (B.wallet.G < vol){
+            const short = Math.min(Math.max(0, cap - bucketBA.iou), Math.max(0, vol - B.wallet.G));
+            if (short>0){ bucketBA.iou += short; A.wallet.G += short; _push('iou', `${B.name} drew IOU ${short.toFixed(1)} from ${A.name}`); }
+          }
+          if (bucketAB.iou>0){
+            bucketAB.iou *= (1 + IOU.interest);
+            const pay = Math.min(bucketAB.iou*0.1, A.wallet.G*0.05);
+            if (pay>0){ bucketAB.iou -= pay; B.wallet.G += pay; A.wallet.G -= pay; }
+          }
+          if (bucketBA.iou>0){
+            bucketBA.iou *= (1 + IOU.interest);
+            const pay = Math.min(bucketBA.iou*0.1, B.wallet.G*0.05);
+            if (pay>0){ bucketBA.iou -= pay; A.wallet.G += pay; B.wallet.G -= pay; }
+          }
+        }
+      }
+    }
+    function renderIOU(){
+      const tgt = ensureSubpanel('trade-list', IOU.uiId, 'Friendly Trade Credits (IOUs)');
+      if(!tgt) return;
+      const rows=[];
+      for(const A of (window.factions||[])){
+        for(const B of (window.factions||[])){
+          if(!A||!B||A.id>=B.id) continue;
+          const rAB = rel(A,B); if(!rAB||!rAB._ext) continue;
+          const iouAB = (rAB._ext.iou||0);
+          if (iouAB>0) rows.push(`<div>${A.name} owes ${B.name}: <b>${iouAB.toFixed(1)}</b></div>`);
+          const rBA = rel(B,A); if(rBA&&rBA._ext&&(rBA._ext.iou||0)>0) rows.push(`<div>${B.name} owes ${A.name}: <b>${(rBA._ext.iou||0).toFixed(1)}</b></div>`);
+        }
+      }
+      setHTML(IOU.uiId+'-content', rows.join('') || '—');
+    }
+
+    /* =========================================================
+       4) CITY CONTRACTS & PUBLIC PROCUREMENT (distinct from existing joint procurement)
+       ========================================================= */
+    const CPC = { uiId:'vb-city-procure', cycle: 240, markets: new Map() };
+    function ensureCityProcure(){
+      for(const m of (window.buildings||[])){
+        if (m.type!=='market') continue;
+        if (!CPC.markets.has(m)){
+          CPC.markets.set(m, {need: 150 + Math.random()*150, got:0, deadline: now()+CPC.cycle, reward: 40 + Math.random()*40});
+        }
+      }
+    }
+    function stepCityProcure(){
+      ensureCityProcure();
+      const byOwner = new Map();
+      for(const f of (window.factions||[])){
+        for(const r of (f.tradeRoutes||[])){
+          const otherId = r.toFactionId ?? r.toId ?? r.to?.faction ?? r.to?.id;
+          const mA = (window.buildings||[]).find(b=>b.type==='market' && b.faction===f.id);
+          const mB = (window.buildings||[]).find(b=>b.type==='market' && b.faction===otherId);
+          if (mA) byOwner.set(mA.faction, (byOwner.get(mA.faction)||0) + (r.lastMoved||0));
+          if (mB) byOwner.set(mB.faction, (byOwner.get(mB.faction)||0) + (r.lastMoved||0));
+        }
+      }
+      for (const [m,rec] of CPC.markets){
+        rec.got += (byOwner.get(m.faction)||0)*0.5;
+        if (now() >= rec.deadline){
+          const owner = window.factions.find(f=>f.id===m.faction);
+          if (rec.got >= rec.need){
+            const suppliers = (window.factions||[])
+              .filter(f=>f.id!==owner.id)
+              .map(f=>({f, v: (byOwner.get(f.id)||0)}))
+              .sort((a,b)=>b.v-a.v).slice(0,2);
+            for(const s of suppliers){
+              if (s.v>0){ ensureWallet(s.f); s.f.wallet.G += rec.reward*0.5; }
+            }
+            owner.treasury = Math.max(0, (owner.treasury||0) - rec.reward);
+            _push('procure', `${owner.name} city contract met (paid reward)`);
+          } else {
+            for(const f of (window.factions||[])){
+              if (f.id===owner.id) continue;
+              const r = f.relations?.get?.(owner.id); if(r) r.trust = Math.max(0, (r.trust||50) - 0.6);
+            }
+            _push('procure', `${owner.name} city contract shortfall`);
+          }
+          CPC.markets.set(m, {need: 150 + Math.random()*150, got:0, deadline: now()+CPC.cycle, reward: 40 + Math.random()*40});
+        }
+      }
+    }
+    function renderCityProcure(){
+      const tgt = ensureSubpanel('trade-list', CPC.uiId, 'City Contracts (Procurement)');
+      if(!tgt) return;
+      const rows=[];
+      for(const [m,rec] of CPC.markets){
+        rows.push(`<div>${window.factions.find(f=>f.id===m.faction)?.name||m.faction} @ (${m.x|0},${m.y|0}): ${rec.got.toFixed(0)} / ${rec.need.toFixed(0)} (due ${rec.deadline})</div>`);
+        if (rows.length>6) break;
+      }
+      setHTML(CPC.uiId+'-content', rows.join('') || '—');
+    }
+
+    /* =========================================================
+       5) KNOWLEDGE LICENSES (MICRO-ROYALTIES)
+       ========================================================= */
+    const LIC = { uiId:'vb-licenses', sampleEvery: 180, rateRange:[0.001,0.004] };
+    function ensureLicenseBook(){ for(const f of (window.factions||[])){ if(!f.licenses) f.licenses = []; } }
+    function maybeCreateLicense(){
+      const gen = now();
+      if (gen % LIC.sampleEvery !== 0) return;
+      ensureLicenseBook();
+      const pairs=[];
+      for(const a of (window.factions||[])){
+        for(const b of (window.factions||[])){
+          if(!a||!b||a.id>=b.id) continue;
+          const r=a.relations?.get?.(b.id);
+          if(r && (r.ally || (r.trust||0)>75)) pairs.push([a,b]);
+        }
+      }
+      if(!pairs.length) return;
+      const [A,B]=pick(pairs);
+      const techId = 'T'+((Math.random()*1000)|0);
+      const rate = LIC.rateRange[0] + Math.random()*(LIC.rateRange[1]-LIC.rateRange[0]);
+      A.licenses.push({techId, ownerId:B.id, rate});
+      B.licenses.push({techId, ownerId:A.id, rate});
+      _push('license', `New cross-license: ${A.name} ⇄ ${B.name} (rate ${(rate*100).toFixed(2)}%)`);
+    }
+    function settleRoyalties(){
+      ensureLicenseBook();
+      for(const f of (window.factions||[])){
+        ensureWallet(f);
+        for(const lic of (f.licenses||[])){
+          const owner = window.factions.find(z=>z.id===lic.ownerId); if(!owner) continue;
+          ensureWallet(owner);
+          let vol=0;
+          (f.tradeRoutes||[]).forEach(r=>{ vol += (r.lastMoved||0); });
+          const pay = vol * lic.rate;
+          if (pay>0 && f.wallet.G >= pay){
+            f.wallet.G -= pay; owner.wallet.G += pay;
+            const r = f.relations?.get?.(owner.id); if(r) r.trust = Math.min(100, (r.trust||50)+0.03);
+          }
+        }
+      }
+    }
+    function renderLicenses(){
+      const tgt = ensureSubpanel('trade-list', LIC.uiId, 'Knowledge Licenses (Royalties)');
+      if(!tgt) return;
+      const rows = (window.factions||[]).map(f=>{
+        const list = (f.licenses||[]).slice(0,3).map(l=>`${l.techId}@${window.factions.find(x=>x.id===l.ownerId)?.name||l.ownerId} (${(l.rate*100).toFixed(2)}%)`).join(' • ');
+        return list ? `<div>${f.name}: ${list}</div>` : null;
+      }).filter(Boolean).join('') || '—';
+      setHTML(LIC.uiId+'-content', rows);
+    }
+
+    /* =========================================================
+       INTEGRATION
+       ========================================================= */
+    window.update = function(){
+      // PRE: temporary route capacity multipliers
+      stepCorridorsPre();
+      stepChainSynergyPre();
+      const out = _prevUpdate.apply(this, arguments);
+      // POST: accounting/maintenance & UI
+      stepIOU();
+      stepCityProcure();
+      maybeCreateLicense();
+      settleRoyalties();
+      stepCorridorsPost();
+      renderCorridors();
+      renderChains();
+      renderIOU();
+      renderCityProcure();
+      renderLicenses();
+      restoreChainCaps();
+      restoreCorridorCaps();
+      return out;
+    };
+
+    // Legend tag
+    const legend=document.getElementById('legendBox');
+    if(legend){
+      const tag=document.createElement('div'); tag.className='item';
+      tag.innerHTML=`<span class="dot" style="background:#34d399"></span><span>Trade Add-ons (Corridors/Chains/IOUs/City Contracts/Licenses)</span>`;
+      legend.appendChild(tag);
+    }
+    _push('init','Trade Add-ons patch enabled');
+    window.majorEvents?.unshift?.(`Gen ${now()}: 📦 Trade add-ons online (corridors/chains/ious/city-contracts/licenses)`);
+  }
+})();
+</script>
+<!-- ====== END: Add-on Patch ====== -->
+
+<!-- ====== START: Universe + New Colony Patch (Puddlejacks + 25% Map) ====== -->
+<script>
+if (!window.__VB_EXPAND_AND_PUDDLEJACKS__) (function(){
+  window.__VB_EXPAND_AND_PUDDLEJACKS__ = true;
+
+  (function ready(){
+    if (typeof window.update==='function' && Array.isArray(window.factions) && Array.isArray(window.buildings) && Array.isArray(window.npcs)){
+      applyExpansionAndColony();
+    } else setTimeout(ready, 60);
+  })();
+
+  function applyExpansionAndColony(){
+    const _push = window.pushEvent || function(){};
+    const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+
+    /* -------------------- 1) Expand universe by +25% (once) -------------------- */
+    if (!window.__VB_UNIVERSE_SCALED__){
+      try{
+        const canv = document.querySelector('canvas#cv') || document.querySelector('canvas');
+        if (canv){
+          canv.width = Math.round(canv.width*1.25);
+          canv.height= Math.round(canv.height*1.25);
+          const left = canv.getBoundingClientRect();
+        }
+      }catch(e){}
+      // scale spatial data around centroid of all markets
+      const mkts = (window.buildings||[]).filter(b=>b.type==='market');
+      const cx = mkts.length ? mkts.reduce((s,m)=>s+m.x,0)/mkts.length : 640;
+      const cy = mkts.length ? mkts.reduce((s,m)=>s+m.y,0)/mkts.length : 360;
+      const scale = 1.25;
+      const sx = (x)=> (cx + (x - cx)*scale);
+      const sy = (y)=> (cy + (y - cy)*scale);
+
+      // buildings
+      for (const b of (window.buildings||[])){
+        if (typeof b.x==='number' && typeof b.y==='number'){
+          b.x = sx(b.x); b.y = sy(b.y);
+        }
+      }
+      // NPCs
+      for (const n of (window.npcs||[])){
+        if (typeof n.x==='number' && typeof n.y==='number'){
+          n.x = sx(n.x); n.y = sy(n.y);
+        }
+      }
+      window.__VB_UNIVERSE_SCALED__ = true;
+      _push('map', 'Universe expanded by 25%');
+      window.majorEvents?.unshift?.(`Gen ${window.generation||0}: 🌌 Universe expanded by 25%`);
+    }
+
+    /* -------------------- 2) Add new colony: Puddlejacks -------------------- */
+    if (!window.factions.find(f=>/puddlejacks/i.test(f.name))){
+      const F = window.factions;
+      if (!F || !F.length) return;
+
+      // Template: use stats averaged from existing factions
+      const avgEconomy = F.reduce((s,f)=>s+(f.economyIndex||1),0)/F.length;
+      const avgTreas = F.reduce((s,f)=>s+(f.treasury||0),0)/F.length;
+      const template = Object.assign({}, F[0]); // shallow copy baseline fields
+      const newId = (function(){ 
+        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        for (let i=0;i<letters.length;i++){
+          const id = letters[i];
+          if (!F.find(f=>f.id===id)) return id;
+        }
+        return 'PJ';
+      })();
+
+      const color = '#a78bfa'; // lilac distinct
+      const P = {
+        id: newId,
+        name: 'Puddlejacks',
+        color,
+        economyIndex: avgEconomy,
+        treasury: Math.round(avgTreas),
+        wallet: JSON.parse(JSON.stringify(template.wallet || {G:20,A:5,B:5})),
+        relations: new Map(),
+        tradeRoutes: []
+      };
+      // Insert relations symmetric with others
+      for (const a of F){
+        const baselineTrust = (a.relations && a.relations.size) 
+          ? Array.from(a.relations.values()).reduce((s,r)=>s+(r.trust||55),0)/a.relations.size
+          : 55;
+        a.relations?.set?.(P.id, { trust: baselineTrust, state:'neutral', sanction:0, ally:false });
+        P.relations.set(a.id, { trust: baselineTrust, state:'neutral', sanction:0, ally:false });
+      }
+
+      // Markets: same count as median existing markets per faction
+      const byFaction = {};
+      for (const b of (window.buildings||[])){ if (b.type==='market'){ byFaction[b.faction]=(byFaction[b.faction]||0)+1; } }
+      const counts = Object.values(byFaction); const median = counts.length ? counts.sort((a,b)=>a-b)[Math.floor(counts.length/2)] : 2;
+      // pick a far quadrant to avoid overlap: place around maxX/maxY + margin
+      const mkts = (window.buildings||[]).filter(b=>b.type==='market');
+      const maxX = mkts.reduce((m,b)=>Math.max(m,b.x), 0);
+      const maxY = mkts.reduce((m,b)=>Math.max(m,b.y), 0);
+      const offsetX = maxX + 120;
+      const offsetY = maxY + 120;
+      for (let i=0;i<Math.max(1, median); i++){
+        window.buildings.push({
+          type:'market',
+          x: offsetX + (Math.random()*160 - 80),
+          y: offsetY + (Math.random()*160 - 80),
+          faction: P.id,
+          meta:{priceMult:1.00}
+        });
+      }
+      // Optional: one arbitration court
+      window.buildings.push({type:'arbitration_court', x: offsetX+40, y: offsetY-40, faction:P.id});
+
+      // NPC population: match average per-faction NPC count
+      const countPerFaction = {};
+      for(const n of (window.npcs||[])){ countPerFaction[n.faction]=(countPerFaction[n.faction]||0)+1; }
+      const vals = Object.values(countPerFaction);
+      const avgNPC = vals.length ? Math.round(vals.reduce((s,v)=>s+v,0)/vals.length) : 20;
+      const anchors = (window.buildings||[]).filter(b=>b.type==='market' && b.faction===P.id);
+      for (let i=0;i<avgNPC;i++){
+        const m = anchors[i % anchors.length];
+        window.npcs.push({
+          id: 'P'+(Date.now()%100000)+'_'+i,
+          faction: P.id,
+          x: m.x + (Math.random()*40-20),
+          y: m.y + (Math.random()*40-20),
+          income: 0.3 + Math.random()*0.6,
+          job: Math.random()<0.7
+        });
+      }
+
+      // Trade routes: mirror average capacity/risk across existing ones
+      const sampleRoutes = [];
+      for(const f of F){ for(const r of (f.tradeRoutes||[])){ sampleRoutes.push(r); } }
+      const avgCap = sampleRoutes.length ? (sampleRoutes.reduce((s,r)=>s+(r.capacity||40),0)/sampleRoutes.length) : 40;
+      const avgRisk = sampleRoutes.length ? (sampleRoutes.reduce((s,r)=>s+(r.risk||0.02),0)/sampleRoutes.length) : 0.02;
+
+      // Insert routes both directions between P and everyone
+      for(const a of F){
+        (a.tradeRoutes = a.tradeRoutes || []).push({ fromFactionId:a.id, toFactionId:P.id, capacity: avgCap, risk: avgRisk, lastMoved: 0 });
+        (P.tradeRoutes = P.tradeRoutes || []).push({ fromFactionId:P.id, toFactionId:a.id, capacity: avgCap, risk: avgRisk, lastMoved: 0 });
+      }
+
+      // Add new faction to list
+      window.factions.push(P);
+
+      // Legend/UI hint
+      const legend=document.getElementById('legendBox');
+      if(legend){
+        const tag=document.createElement('div'); tag.className='item';
+        tag.innerHTML=`<span class="dot" style="background:${color}"></span><span>Puddlejacks (new colony)</span>`;
+        legend.appendChild(tag);
+      }
+      _push('init','New colony added: Puddlejacks');
+      window.majorEvents?.unshift?.(`Gen ${window.generation||0}: 🪐 New colony founded — Puddlejacks`);
+    }
+  }
+})();
+</script>
+<!-- ====== END: Universe + New Colony Patch ====== -->
+
